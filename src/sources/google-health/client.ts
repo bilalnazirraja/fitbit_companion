@@ -28,7 +28,16 @@ export class GoogleHealthError extends Error {
         : status === 400
           ? "\nThe API rejected the request (often the filter). See https://developers.google.com/health/filters"
           : "";
-    super(`Google Health API returned ${status} for ${url}\n${body.slice(0, 600)}${hint}`);
+    // Google's own reason goes on the first line, since that's the line the web app shows.
+    let reason = "";
+    try {
+      const err = (JSON.parse(body) as { error?: { status?: string; message?: string } }).error;
+      if (err) reason = `${err.status ?? ""}: ${err.message ?? ""}`.replace(/^: /, "");
+    } catch {
+      reason = body.slice(0, 200);
+    }
+    const what = new URL(url).pathname.split("/dataTypes/")[1]?.split("/")[0] ?? url;
+    super(`Google Health API returned ${status} for ${what}. ${reason}\n${url}\n${body.slice(0, 600)}${hint}`);
     this.status = status;
   }
 }
