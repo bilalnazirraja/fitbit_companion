@@ -1,7 +1,7 @@
 // The hosted Performance Journal as one Web-standard request handler (Request → Response).
 // The Vercel function and `npm run serve` both run this.
 //
-//   GET  /login, POST /login, GET /logout       password sign-in (everything else requires it)
+//   GET  /login, POST /login, GET /logout       password sign-in (needed for anything but looking)
 //   GET  /                                      the app, with your data embedded
 //   GET  /api/data                              the same data as JSON
 //   POST /api/matches                           log a match, or edit one (the body carries its id)
@@ -117,7 +117,10 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
     if (path === "/login") return req.method === "POST" ? login(req, sign, secure) : html(200, loginPage());
     if (path === "/logout") return redirect("/login", [setCookie(SESSION_COOKIE, "", { maxAgeSec: 0, secure })]);
 
-    if (!sign.open(cookies[SESSION_COOKIE])) {
+    // Anyone can look; only you (signed in) can change anything or spend on AI.
+    const signedIn = Boolean(sign.open(cookies[SESSION_COOKIE]));
+    const publicRead = req.method === "GET" && (path === "/" || path === "/api/data");
+    if (!signedIn && !publicRead) {
       return req.method === "GET" && !isApi
         ? redirect("/login")
         : json(401, { ok: false, message: "Signed out. Reload the page and sign in again." });
@@ -131,7 +134,7 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
     if (isApi) {
       const [, , kind, id] = path.split("/");
       try {
-        return await api(req, url, r, kind, id === undefined ? undefined : decodeURIComponent(id));
+        return await api(req, url, r, kind, id === undefined ? undefined : decodeURIComponent(id), signedIn);
       } catch (err) {
         if (err instanceof ReconnectError || err instanceof AiError) return json(200, { ok: false, message: err.message });
         throw err;
@@ -139,7 +142,7 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
     }
     switch (`${req.method} ${path}`) {
       case "GET /":
-        return html(200, renderApp(await state(r, url.searchParams.get("flash"))));
+        return html(200, renderApp(await state(r, url.searchParams.get("flash"), signedIn)));
       case "GET /connect":
         return connect(url, sign, secure);
       case "GET /oauth/callback":
@@ -153,10 +156,10 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
     }
   }
 
-  async function api(req: Request, url: URL, r: Repo, kind: string, id: string | undefined): Promise<Response> {
+  async function api(req: Request, url: URL, r: Repo, kind: string, id: string | undefined, signedIn: boolean): Promise<Response> {
     switch (`${req.method} ${kind}${id === undefined ? "" : "/:id"}`) {
       case "GET data":
-        return json(200, await state(r, null));
+        return json(200, await state(r, null, signedIn));
       case "GET status":
         return json(200, { connected: Boolean(await r.token()), me: await currentMe(r), lastSync: await r.syncStatus() });
       case "POST matches":
@@ -277,7 +280,7 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
     return stored && stored.version === DATASET_VERSION ? stored : rebuild(r);
   }
 
-  async function state(r: Repo, flash: string | null): Promise<AppState> {
+  async function state(r: Repo, flash: string | null, canEdit = true): Promise<AppState> {
     const data = await dataset(r);
     const [token, lastSync, settings, notes, journal, scores, leagueMe, usage, insights] = await Promise.all([
       r.token(),
@@ -293,6 +296,7 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
     return {
       data,
       hosted: true,
+      canEdit,
       name: settings.name ?? leagueMe ?? null,
       notes,
       entries: Object.fromEntries(journal.map((e) => [e.id, e])),

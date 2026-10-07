@@ -28,7 +28,6 @@ function insightsBody(sport, list) {
       { class: "grid", style: "margin-top:12px" },
       effortTrendCard(sport, chrono),
       efficiencyTrendCard(sport, chrono),
-      movementTrendCard(chrono),
       sport !== "golf" ? opponentsCard(sum) : null,
       readinessInsightCard(list),
     ),
@@ -44,14 +43,14 @@ function summaryTiles(sport, sum) {
       ? [
           stat("Matches", String(sum.matches), null, sum.wins + sum.losses ? `${sum.wins} won · ${sum.losses} lost` : null, "scoreboard"),
           stat("Time played", duration(sum.minutes), null, null, "timer"),
-          stat("Steps in play", int(sum.steps), null, null, "steps"),
+          stat("Opponents", String(sum.opponents.length), null, null, "group"),
           stat("Total load", int(sum.load), null, null, "bolt"),
         ]
       : [
           stat("Matches", String(sum.matches), null, sport === "golf" ? null : `${sum.wins} won · ${sum.losses} lost`, sportOf(sport).icon),
           stat("Avg heart rate", a.hr != null ? int(a.hr) : "–", a.hr != null ? "bpm" : null, a.maxHr != null ? `peaks ~${a.maxHr}` : null, "favorite"),
           stat("Avg load", a.load != null ? int(a.load) : "–", null, a.minutes != null ? `${duration(a.minutes)} a match` : null, "bolt"),
-          stat("Steps a minute", a.stepsPerMin != null ? one(a.stepsPerMin) : "–", null, null, "steps"),
+          stat(sport === "golf" ? "Avg score" : "Points won", sport === "golf" ? (a.strokes != null ? one(a.strokes) : "–") : pct(a.unitShare), null, null, "emoji_events"),
         ];
   return h("div", { class: "stats four" }, tiles.map((t) => h("div", { class: "tile" }, t)));
 }
@@ -117,30 +116,15 @@ function effortTrendCard(sport, chrono) {
 }
 
 function efficiencyTrendCard(sport, chrono) {
-  if (sport === "all" || sport === "golf") {
-    return trendCard(
-      "Movement economy",
-      "speed",
-      trendPoints(chrono, (m) => (m.efficiency ? m.efficiency.beatsPerStep : null), (m) => `${two(m.efficiency.beatsPerStep)} beats a step`),
-      {
-        label: "Effort per step",
-        fmt: (v) => two(v),
-        lowerIsBetter: true,
-        good: "Each step costs your heart less: a sign of fitness.",
-        bad: "Each step costs your heart more: tiredness, heat or harder matches.",
-        color: "var(--c-steps)",
-        empty: "Needs heart rate and steps for your matches.",
-        note: "Heartbeats above resting for every step. Lower is more economical.",
-      },
-    );
-  }
+  if (sport === "all") return null;
   const unit = sportOf(sport).unit;
+  const won = unit === "hole" ? "" : " won";
   return trendCard(
-    `Effort per ${unit} won`,
+    `Effort per ${unit}${won}`,
     "speed",
-    trendPoints(chrono, (m) => (m.efficiency ? m.efficiency.beatsPerUnit : null), (m) => `${one(m.efficiency.beatsPerUnit)} beats per ${unit} won`),
+    trendPoints(chrono, (m) => (m.efficiency ? m.efficiency.beatsPerUnit : null), (m) => `${one(m.efficiency.beatsPerUnit)} beats per ${unit}${won}`),
     {
-      label: `Effort per ${unit} won`,
+      label: `Effort per ${unit}${won}`,
       fmt: (v) => one(v),
       lowerIsBetter: true,
       good: `You're winning ${unit}s more cheaply.`,
@@ -148,21 +132,6 @@ function efficiencyTrendCard(sport, chrono) {
       color: "var(--c-hr)",
       empty: "Needs heart rate for your matches.",
       note: `Heartbeats above resting for each ${unit} you won. Lower means more efficient.`,
-    },
-  );
-}
-
-function movementTrendCard(chrono) {
-  return trendCard(
-    "Movement",
-    "steps",
-    trendPoints(chrono, (m) => (m.steps ? m.steps.perMin : null), (m) => `${one(m.steps.perMin)} steps a minute`),
-    {
-      label: "Steps a minute",
-      fmt: (v) => one(v),
-      color: "var(--c-steps)",
-      empty: "Steps show once they're synced from your watch.",
-      note: "How much you moved per minute of play. Pair it with effort: more movement for the same effort means better fitness.",
     },
   );
 }
@@ -327,7 +296,7 @@ function rallySection() {
     h("p", {
       class: "body-medium muted",
       style: "margin:0 4px 12px",
-      text: `From the ${logged} imported league match${logged === 1 ? "" : "es"} with a point-by-point log. Matches you log here have final scores only, so they don't change this part.`,
+      text: `From your ${logged} match${logged === 1 ? "" : "es"} with a point-by-point log. Matches you score live here are added; ones logged with final scores only aren't.`,
     }),
     parts,
   );
@@ -339,11 +308,12 @@ function howItWorks() {
     { class: "section" },
     panel(
       "How these numbers work",
-      "Load, zones, effort, steps and the rally analysis",
+      "Zones, load, effort, training load and the rally analysis",
       h("p", { class: "body-medium" }, h("b", { text: "Heart-rate zones " }), "are shares of your max heart rate: zone 1 from 50%, then 60, 70, 80 and 90%. Your max is the highest seen in your matches unless you set it in Settings."),
       h("p", { class: "body-medium" }, h("b", { text: "Load " }), "counts each minute by zone (1 point in zone 1 up to 5 in zone 5), so a long easy round and a short brutal match can be compared."),
-      h("p", { class: "body-medium" }, h("b", { text: "Effort " }), "is heartbeats above your resting rate. Effort per point (squash) or per game (padel) won shows how much each win cost; effort per step shows how economically you move."),
-      h("p", { class: "body-medium" }, h("b", { text: "Steps " }), "come from your Fitbit minute by minute. Wrist step counts in racket sports miss some lunges and count some swings, so compare matches with each other rather than reading them as exact."),
+      h("p", { class: "body-medium" }, h("b", { text: "Effort " }), "is heartbeats above your resting rate. Effort per point (squash) or per game (padel) won shows how much each win cost; lower is more efficient."),
+      h("p", { class: "body-medium" }, h("b", { text: "Training load " }), "compares the last 7 days' load with your usual week (last 28 days ÷ 4). 0.8–1.3 is the sweet spot; above 1.5 is a spike, when overuse injuries are most likely."),
+      h("p", { class: "body-medium" }, h("b", { text: "Felt vs heart rate " }), "multiplies how hard it felt (1–10) by the minutes played and compares that with the heart-rate load. Feeling much harder than usual for the same load often means tiredness, poor sleep or illness."),
       h("p", { class: "body-medium" }, h("b", { text: "Match times " }), "come from the Fitbit workout you pick when logging (exact), otherwise from the time you type."),
       h(
         "p",

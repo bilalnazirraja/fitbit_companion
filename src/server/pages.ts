@@ -22,7 +22,7 @@ function page(title: string, body: string): string {
 <link rel="stylesheet" href="${TEXT_FONT_URL}">
 <style>${dashboardCss}</style>
 </head>
-<body><main class="solo">${body}</main></body>
+<body><main class="solo">${body}<p class="credit body-small">Powered by <a href="https://rapteck.com/" target="_blank" rel="noopener">Rapteck</a></p></main></body>
 </html>`;
 }
 
@@ -32,12 +32,13 @@ export function loginPage(error?: string): string {
     `<div class="card solo-card">
   ${LOGO}
   <h1 class="headline-small">Performance Journal</h1>
-  <p class="body-medium muted">Sign in to see your matches, heart rate and steps.</p>
+  <p class="body-medium muted">Sign in to log matches, add notes and sync your watch.</p>
   <form method="post" action="/login" class="stack">
     <label class="field"><span class="field-label">Password</span><input name="password" type="password" autocomplete="current-password" required autofocus></label>
     ${error ? `<p class="field-error" role="alert">${esc(error)}</p>` : ""}
     <button class="btn filled" type="submit">Sign in</button>
   </form>
+  <p class="body-small"><a href="/">Just looking? View the journal</a></p>
 </div>`,
   );
 }

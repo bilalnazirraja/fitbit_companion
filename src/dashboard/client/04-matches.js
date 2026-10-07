@@ -56,7 +56,7 @@ PAGES.match = (r) => {
   const m = matchById(r.id);
   if (!m) return notFoundView("That match isn't in your journal.");
   const sp = sportOf(m.sport);
-  const editable = HOSTED && Boolean(S.entries[m.id]);
+  const editable = EDIT && Boolean(S.entries[m.id]);
   return {
     back: previousHash.startsWith("#/match") ? "#/matches" : previousHash,
     title: matchTitle(m),
@@ -74,7 +74,8 @@ PAGES.match = (r) => {
         m.hr ? zonesCard(m) : null,
         efficiencyCard(m),
         feelCard(m),
-        HOSTED
+        fatigueCard(m),
+        HOSTED && S.ai && (S.ai.configured || EDIT)
           ? aiCard({
               key: `match:${m.id}`,
               request: { scope: "match", id: m.id },
@@ -146,7 +147,7 @@ function statsCard(m) {
       { class: "stats four" },
       stat("Played", duration(m.minutes), null, compareNode(m.minutes, u.minutes), "timer"),
       stat("Avg heart rate", m.hr ? int(m.hr.avg) : "–", m.hr ? "bpm" : null, m.hr ? `max ${m.hr.max}` : null, "favorite"),
-      stat("Steps", m.steps ? int(m.steps.total) : "–", null, m.steps ? `${one(m.steps.perMin)} a minute` : null, "steps"),
+      stat("How hard it felt", S.notes[m.id] && S.notes[m.id].rpe != null ? String(S.notes[m.id].rpe) : "–", S.notes[m.id] && S.notes[m.id].rpe != null ? "/10" : null, null, "edit_note"),
       stat("Load", m.hr && m.hr.load != null ? int(m.hr.load) : "–", null, m.hr ? compareNode(m.hr.load, u.load) : null, "bolt"),
     ),
     m.calories ? h("p", { class: "body-small muted", style: "margin-top:12px", text: `${int(m.calories)} kcal by your watch.` }) : null,
@@ -163,31 +164,30 @@ const BASIS = {
 };
 
 function chartCard(m) {
-  const has = m.chart && (m.chart.hr.length > 1 || m.chart.steps.length > 0);
+  const has = m.chart && m.chart.hr.length > 1;
   if (!has) {
     return h(
       "div",
       { class: "card wide" },
-      cardHead("Heart rate & steps", "monitor_heart"),
+      cardHead("Heart rate", "monitor_heart"),
       h("p", {
         class: "body-medium muted",
-        text: HOSTED
+        text: EDIT
           ? "No watch data for this match yet. If your Fitbit was on, wait for it to upload to the Fitbit app, then sync."
           : "No watch data for this match.",
       }),
-      HOSTED && S.google && S.google.connected
+      EDIT && S.google && S.google.connected
         ? h("div", { class: "card-foot" }, h("button", { class: "btn tonal", type: "button", disabled: syncing, onclick: () => syncNow() }, icon("sync"), "Sync now"))
         : null,
     );
   }
   const keys = [];
   if (m.chart.hr.length > 1) keys.push(["line", "var(--c-hr)", "Heart rate"]);
-  if (m.chart.steps.length) keys.push(["swatch", "var(--c-steps)", "Steps per minute"]);
   keys.push(["swatch", "var(--rest)", m.chart.rests.length ? "Rest, warm-up, cool-down" : "Before and after"]);
   return h(
     "div",
     { class: "card wide" },
-    cardHead("Heart rate & steps", "monitor_heart"),
+    cardHead("Heart rate", "monitor_heart"),
     chartBox(effortChart(m)),
     legend(keys),
     m.timing ? h("p", { class: "body-small muted", style: "margin-top:8px", text: BASIS[m.timing.basis] || "" }) : null,
@@ -236,24 +236,6 @@ function efficiencyCard(m) {
         unit === "hole" ? null : true,
         unit === "hole" ? "Heartbeats above resting for each hole." : `Heartbeats above resting for each ${unit} you won. Lower means you won them more cheaply.`,
       ),
-    );
-  }
-  if (e.stepsPerUnit != null) {
-    rows.push(
-      effRow(
-        unit === "point" ? "Steps per rally" : `Steps per ${unit}`,
-        one(e.stepsPerUnit),
-        "steps",
-        u.stepsPerUnit,
-        e.stepsPerUnit,
-        null,
-        unit === "point" ? "How much you moved for each rally played." : unit === "game" ? "How much you moved for each game played." : "Walking per hole.",
-      ),
-    );
-  }
-  if (e.beatsPerStep != null) {
-    rows.push(
-      effRow("Effort per step", two(e.beatsPerStep), "beats", u.beatsPerStep, e.beatsPerStep, true, "What each step cost your heart. Falling over the weeks means fitter, more economical movement."),
     );
   }
   const assumed = m.restingHr && m.restingHr.source !== "day";
@@ -399,7 +381,7 @@ function feelCard(m) {
       paint();
     };
     fill(card, 
-      cardHead("How it felt", "edit_note", HOSTED && note ? iconButton("edit", "Edit how it felt", start) : null),
+      cardHead("How it felt", "edit_note", EDIT && note ? iconButton("edit", "Edit how it felt", start) : null),
       note
         ? [
             note.rpe != null
@@ -409,9 +391,9 @@ function feelCard(m) {
           ]
         : h("p", {
             class: "body-medium muted",
-            text: HOSTED ? "How hard it felt and a few words make patterns (and the AI coach) far more useful." : "No notes for this match.",
+            text: EDIT ? "How hard it felt and a few words make patterns (and the AI coach) far more useful." : "No notes for this match.",
           }),
-      !note && HOSTED ? h("div", { class: "card-foot" }, h("button", { class: "btn tonal", type: "button", onclick: start }, icon("edit_note"), "Add how it felt")) : null,
+      !note && EDIT ? h("div", { class: "card-foot" }, h("button", { class: "btn tonal", type: "button", onclick: start }, icon("edit_note"), "Add how it felt")) : null,
     );
   };
   paint();
@@ -483,4 +465,42 @@ async function deleteMatch(m) {
   S = res.state;
   location.replace(href("matches"));
   snack("Match deleted.");
+}
+
+/**
+ * How hard it felt (1-10 × minutes, the "session RPE" load) against what your heart rate says.
+ * Felt clearly harder than usual for the same heart-rate load: tiredness, illness or poor sleep.
+ */
+function fatigueCard(m) {
+  const ratioOf = (x) => {
+    const n = S.notes[x.id];
+    return n && n.rpe != null && x.hr && x.hr.load && x.minutes ? (n.rpe * x.minutes) / x.hr.load : null;
+  };
+  const mine = ratioOf(m);
+  if (mine == null) return null;
+  const others = allMatches().filter((x) => x.id !== m.id).map(ratioOf).filter((v) => v != null).sort((a, b) => a - b);
+  const note = S.notes[m.id];
+  const felt = Math.round(note.rpe * m.minutes);
+  const card = h("div", { class: "card half" }, cardHead("Felt vs heart rate", "favorite"));
+  if (others.length < 3) {
+    card.append(
+      h("p", { class: "body-medium", text: `Felt load ${felt} (${note.rpe}/10 × ${Math.round(m.minutes)} min) against a heart-rate load of ${m.hr.load}.` }),
+      h("p", { class: "body-small muted", style: "margin-top:6px", text: "After 3 more matches with a rating, this flags when a match felt harder than your heart rate says." }),
+    );
+    return card;
+  }
+  const usual = others[Math.floor(others.length / 2)];
+  const d = mine / usual - 1;
+  const [title, text, cls] =
+    d > 0.25
+      ? ["Felt harder than it was", "For this heart rate, it felt much harder than usual. Often a sign of tiredness, poor sleep or a cold coming: worth an easier day.", "bad"]
+      : d < -0.25
+        ? ["Felt easier than it was", "Your heart worked harder than it felt. Good form, or adrenaline: recover well.", "good"]
+        : ["Felt as hard as it was", "How it felt matches your heart rate, as usual.", ""];
+  card.append(
+    h("div", { class: `delta ${cls}`, style: "font-size:14px" }, icon(d > 0.25 ? "trending_up" : d < -0.25 ? "trending_down" : "trending_flat"), title),
+    h("p", { class: "body-medium", style: "margin-top:6px", text }),
+    h("p", { class: "body-small muted", style: "margin-top:6px", text: `Felt load ${felt} vs heart-rate load ${m.hr.load}: ${signed(Math.round(d * 100))}% against your usual.` }),
+  );
+  return card;
 }

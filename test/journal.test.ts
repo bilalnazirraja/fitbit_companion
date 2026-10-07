@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hrStats, matchView, stepsIn, summarize } from "../src/analysis/matches.ts";
+import { hrStats, matchView, summarize } from "../src/analysis/matches.ts";
 import { costUsd, modelInfo } from "../src/ai/openai.ts";
 import { matchPrompt, overviewPrompt } from "../src/ai/prompts.ts";
 import { entryToSession, InputError, matchWindow, parseEntry, parseNote, type JournalEntry } from "../src/journal/entries.ts";
@@ -110,32 +110,15 @@ test("heart-rate zones, load and effort", () => {
   assert.ok(Math.abs(est.load! - 80) <= 6, `load ${est.load}`);
 });
 
-test("steps are spread over their interval and clipped to the match", () => {
-  const steps = [
-    { start: T - MIN, end: T + MIN, count: 100 }, // half before the match
-    { start: T + MIN, end: T + 2 * MIN, count: 80 },
-  ];
-  const s = stepsIn(steps, T, T + 3 * MIN)!;
-  assert.equal(s.total, 130);
-  assert.deepEqual(s.perMinute, [
-    [0, 50],
-    [1, 80],
-    [2, 0],
-  ]);
-  assert.equal(stepsIn(steps, T + 10 * MIN, T + 20 * MIN), null);
-});
-
-test("efficiency per point won, per rally and per step", () => {
+test("efficiency: effort per point won", () => {
   const e = squash();
   const s = entryToSession(e, me);
   const hr: HrSample[] = [];
   for (let t = s.startedAt; t < s.endedAt!; t += 1000) hr.push({ t, bpm: 150 });
-  const steps = Array.from({ length: 40 }, (_, k) => ({ start: T + k * MIN, end: T + (k + 1) * MIN, count: 60 }));
-  const m = matchView(s, { side: "a", alignment: null, heartRate: hr, steps, recordings: [], hrMax: 200, daily: { date: "2026-10-06", restingHr: 60 }, typicalRestingHr: null });
+  const m = matchView(s, { side: "a", alignment: null, heartRate: hr, recordings: [], hrMax: 200, daily: { date: "2026-10-06", restingHr: 60 }, typicalRestingHr: null });
   assert.deepEqual(m.tally, { unit: "point", won: 42, lost: 32 });
   assert.equal(m.hr!.extraBeats, 40 * 90);
-  assert.equal(m.steps!.total, 2400);
-  assert.deepEqual(m.efficiency, { unit: "point", beatsPerUnit: Math.round((3600 / 42) * 10) / 10, stepsPerUnit: Math.round((2400 / 74) * 10) / 10, beatsPerStep: 1.5 });
+  assert.deepEqual(m.efficiency, { unit: "point", beatsPerUnit: Math.round((3600 / 42) * 10) / 10 });
   assert.equal(m.restingHr!.source, "day");
   const sum = summarize([m]);
   assert.equal(sum.squash.wins, 1);
@@ -144,7 +127,7 @@ test("efficiency per point won, per rally and per step", () => {
 
 test("AI prompts stay compact and costs follow OpenAI's prices", () => {
   const s = entryToSession(squash(), me);
-  const m = matchView(s, { side: "a", alignment: null, heartRate: [], steps: [], recordings: [], hrMax: null, daily: null, typicalRestingHr: null });
+  const m = matchView(s, { side: "a", alignment: null, heartRate: [], recordings: [], hrMax: null, daily: null, typicalRestingHr: null });
   const prompt = matchPrompt(m, { name: "Bilal", usual: summarize([m]).squash, note: parseNote({ text: "Felt sharp", rpe: 7 }, NOW), hrMax: 195, headToHead: { won: 2, lost: 1 } });
   assert.ok(prompt.length < 800, `${prompt.length} chars`);
   assert.match(prompt, /squash 2026-10-06 vs Usama, WIN 3-1 \(11-7 9-11 11-8 11-6\)/);

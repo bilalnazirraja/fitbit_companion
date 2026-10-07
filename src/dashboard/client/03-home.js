@@ -42,12 +42,12 @@ function setupCards() {
           "div",
           { class: "banner" },
           icon("info"),
-          h("p", { class: "body-medium", text: "Demo: the scores are real, the heart rate and steps are simulated so you can preview the app. Patterns here mean nothing." }),
+          h("p", { class: "body-medium", text: "Demo: the scores are real, the heart rate is simulated so you can preview the app. Patterns here mean nothing." }),
         ),
       ),
     );
   }
-  if (HOSTED && S.league && !S.league.me && !S.league.locked && S.league.players.length) {
+  if (EDIT && S.league && !S.league.me && !S.league.locked && S.league.players.length) {
     cards.push(
       h(
         "div",
@@ -71,7 +71,7 @@ function setupCards() {
       ),
     );
   }
-  if (HOSTED && S.google && S.google.configured && !S.google.connected) {
+  if (EDIT && S.google && S.google.configured && !S.google.connected) {
     cards.push(
       h(
         "div",
@@ -84,7 +84,7 @@ function setupCards() {
             "div",
             { class: "stack", style: "gap:8px" },
             h("h2", { class: "title-medium", text: "Connect your Fitbit" }),
-            h("p", { class: "body-medium muted", text: "Heart rate and steps come from Google Health. Connect once and every match gets its effort data." }),
+            h("p", { class: "body-medium muted", text: "Heart rate comes from Google Health. Connect once and every match gets its effort data." }),
             h("div", {}, h("a", { class: "btn filled", href: "/connect" }, icon("link"), "Connect Google Health")),
           ),
         ),
@@ -114,9 +114,9 @@ function emptyMatches(sport) {
     h("p", { class: "title-medium", text: sp ? `No ${sp.label.toLowerCase()} matches yet` : "No matches yet" }),
     h("p", {
       class: "body-medium",
-      text: HOSTED ? "Log a match after you play. Your Fitbit fills in the heart rate and steps." : "Matches appear here once they're synced.",
+      text: EDIT ? "Log a match after you play. Your Fitbit fills in the heart rate." : "Matches appear here once they're synced.",
     }),
-    HOSTED ? h("a", { class: "btn filled", href: href("log") }, icon("add"), "Log a match") : null,
+    EDIT ? h("a", { class: "btn filled", href: href("log") }, icon("add"), "Log a match") : null,
   );
 }
 
@@ -126,7 +126,7 @@ function homeGrid(sport, list, sum) {
     { class: "grid" },
     lastMatchCard(list[0]),
     sport === "golf" ? golfCard(list, sum) : recordCard(sport, sum),
-    HOSTED
+    HOSTED && S.ai && (S.ai.configured || EDIT)
       ? aiCard({
           key: `overview:${sport}`,
           request: { scope: "overview", sport },
@@ -135,6 +135,7 @@ function homeGrid(sport, list, sum) {
         })
       : null,
     effortCard(list),
+    trainingLoadCard(),
     monthCard(list),
   );
 }
@@ -143,7 +144,6 @@ function metricBits(m) {
   return [
     m.minutes != null ? h("span", { class: "metric" }, icon("timer"), duration(m.minutes)) : null,
     m.hr ? h("span", { class: "metric hr" }, icon("favorite", "fill"), `${Math.round(m.hr.avg)} bpm`) : null,
-    m.steps ? h("span", { class: "metric steps" }, icon("steps"), `${int(m.steps.total)} steps`) : null,
     m.hr && m.hr.load != null ? h("span", { class: "metric load" }, icon("bolt", "fill"), `load ${m.hr.load}`) : null,
   ];
 }
@@ -244,7 +244,7 @@ function effortCard(list) {
       "div",
       { class: "card half" },
       cardHead("Effort per match", "bolt"),
-      h("p", { class: "body-medium muted", text: HOSTED ? "Effort shows once your matches have heart rate. Sync after your Fitbit has uploaded." : "No heart-rate data yet." }),
+      h("p", { class: "body-medium muted", text: EDIT ? "Effort shows once your matches have heart rate. Sync after your Fitbit has uploaded." : "No heart-rate data yet." }),
     );
   }
   const avg = mean(loads);
@@ -280,7 +280,7 @@ function effortCard(list) {
 function monthCard(list) {
   const month = list.filter((m) => m.startedAt >= Date.now() - 30 * 86_400_000);
   const minutes = month.reduce((a, m) => a + (m.minutes || 0), 0);
-  const steps = month.reduce((a, m) => a + (m.steps ? m.steps.total : 0), 0);
+  const load = month.reduce((a, m) => a + (m.hr && m.hr.load ? m.hr.load : 0), 0);
   const won = month.filter((m) => m.result === "win").length;
   const hrs = month.filter((m) => m.hr).map((m) => m.hr.avg);
   return h(
@@ -292,7 +292,7 @@ function monthCard(list) {
       { class: "stats" },
       stat("Matches", String(month.length), null, won ? `${won} won` : null),
       stat("Time played", duration(minutes)),
-      stat("Steps in play", int(steps)),
+      stat("Total load", int(load)),
       stat("Avg heart rate", hrs.length ? int(mean(hrs)) : "–", hrs.length ? "bpm" : null),
     ),
   );
@@ -361,8 +361,12 @@ function aiCard({ key, request, title, blurb, cls = "half" }) {
     const ai = S.ai;
     const saved = ai && ai.insights[key];
     const model = ai && ai.models.find((m) => m.id === ai.usage.model);
-    const parts = [cardHead(title, "auto_awesome", saved && ai.configured && !busy ? iconButton("refresh", "Ask again", run) : null)];
-    if (!ai || !ai.configured) {
+    const parts = [cardHead(title, "auto_awesome", saved && EDIT && ai.configured && !busy ? iconButton("refresh", "Ask again", run) : null)];
+    if (saved && !EDIT) {
+      parts.push(h("p", { class: "ai-text", text: saved.text }), h("p", { class: "ai-meta muted", text: `${modelLabel(saved.model)} · ${dfStamp.format(saved.at)}` }));
+    } else if (!EDIT) {
+      parts.push(h("p", { class: "body-medium muted", text: "No AI read for this yet." }));
+    } else if (!ai || !ai.configured) {
       parts.push(
         h("p", { class: "body-medium muted", text: "Add your OpenAI key and get a short coach's read on your matches, for a fraction of a cent each." }),
         h("div", { class: "card-foot" }, h("a", { class: "btn outlined", href: href("settings") }, "Set it up")),
@@ -389,9 +393,41 @@ function aiCard({ key, request, title, blurb, cls = "half" }) {
       );
     }
     if (error) parts.push(h("p", { class: "body-small", role: "alert", style: "margin-top:10px;color:var(--c-loss-fill)", text: error }));
-    if (ai && ai.configured) parts.push(usageBar(ai.usage, true));
+    if (EDIT && ai && ai.configured) parts.push(usageBar(ai.usage, true));
     fill(card, ...parts);
   }
   paint();
+  return card;
+}
+
+/**
+ * Acute:chronic load: the last 7 days against your weekly average over the last 28. Around 0.8-1.3
+ * is the usual sweet spot; a jump past 1.5 is when overuse injuries tend to follow.
+ */
+function trainingLoadCard() {
+  const now = Date.now();
+  const sum = (days) => allMatches().filter((m) => m.hr && m.hr.load && m.startedAt >= now - days * 86_400_000).reduce((a, m) => a + m.hr.load, 0);
+  const acute = sum(7);
+  const chronic = sum(28) / 4;
+  const card = h("div", { class: "card half" }, cardHead("Training load", "bolt"));
+  if (!chronic) {
+    card.append(h("p", { class: "body-medium muted", text: "Needs a few weeks of matches with heart rate. Compares this week's load with your usual week." }));
+    return card;
+  }
+  const ratio = acute / chronic;
+  const [label, note, cls] =
+    ratio > 1.5
+      ? ["Spike", "Much more than your usual week. Injury risk rises: take an easier day.", "over"]
+      : ratio > 1.3
+        ? ["Building fast", "Above your usual. Fine for a week, watch for soreness.", "warn"]
+        : ratio >= 0.8
+          ? ["Sweet spot", "In line with what your body is used to.", ""]
+          : ["Light week", "Below your usual: room to push, or a deliberate rest.", ""];
+  card.append(
+    h("div", { class: "row", style: "align-items:baseline;gap:10px" }, h("span", { class: "stat-value num", text: two(ratio) }), h("span", { class: "title-medium", text: label })),
+    h("div", { class: `progress${cls ? ` ${cls}` : ""}`, style: "margin:10px 0", role: "img", "aria-label": `Load ratio ${two(ratio)}` }, h("i", { style: `width:${Math.min(100, (ratio / 2) * 100)}%` })),
+    h("p", { class: "body-medium", text: note }),
+    h("p", { class: "body-small muted", style: "margin-top:6px", text: `Last 7 days ${int(acute)} · usual week ${int(chronic)} (last 28 days ÷ 4)` }),
+  );
   return card;
 }

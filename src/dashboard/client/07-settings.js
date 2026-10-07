@@ -2,6 +2,25 @@
 
 PAGES.settings = () => {
   if (!HOSTED) return notFoundView();
+  if (!EDIT) {
+    return {
+      title: "Settings",
+      body: [
+        h(
+          "div",
+          { class: "grid" },
+          h(
+            "div",
+            { class: "card half" },
+            cardHead("Sign in", "key"),
+            h("p", { class: "body-medium muted", text: "Anyone can look at this journal. Sign in to log matches, add notes, sync the watch or ask the AI." }),
+            h("div", { class: "card-foot" }, h("a", { class: "btn filled", href: "/login" }, icon("key"), "Sign in")),
+          ),
+          appearanceCard(),
+        ),
+      ],
+    };
+  }
   return {
     title: "Settings",
     body: [h("div", { class: "grid" }, profileCard(), watchCard(), aiSettingsCard(), leagueCard(), appearanceCard(), accountCard())],

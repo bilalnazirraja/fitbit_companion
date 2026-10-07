@@ -5,7 +5,7 @@ import type { Note } from "../journal/entries.ts";
 
 export const INSTRUCTIONS =
   "You are a concise sports performance coach for one amateur player (squash, padel, golf). " +
-  "Data comes from a wrist heart-rate and step tracker. 'usual' is the player's own average. " +
+  "Data comes from a wrist heart-rate tracker. 'usual' is the player's own average. " +
   "load = zone-weighted minutes (a minute in Z1 counts 1 ... Z5 counts 5). effort = heartbeats above resting. " +
   "Reply in plain text: up to 3 bullets starting '- ' on what stands out against usual, then one line starting 'Try:' with one specific tip. " +
   "Under 90 words. Use only the numbers given, never invent data, no preamble.";
@@ -43,10 +43,7 @@ function usualLine(sport: string, u: SportSummary, unit: "point" | "game" | "hol
     a.minutes !== null && `${a.minutes} min`,
     a.hr !== null && `hr ${a.hr}`,
     a.load !== null && `load ${a.load}`,
-    a.stepsPerMin !== null && `${a.stepsPerMin} steps/min`,
     unit && a.beatsPerUnit !== null && `effort ${a.beatsPerUnit}/${UNIT_WON[unit]}`,
-    unit && a.stepsPerUnit !== null && `${a.stepsPerUnit} steps/${UNIT_PLAYED[unit]}`,
-    a.beatsPerStep !== null && `effort ${a.beatsPerStep}/step`,
     a.unitShare !== null && unit && unit !== "hole" && `won ${pct(a.unitShare)} of ${unit}s`,
     a.strokes !== null && `${a.strokes} strokes`,
   ]);
@@ -75,12 +72,9 @@ export function matchPrompt(m: MatchView, o: MatchPromptContext): string {
         `minutes in Z1-Z5 ${m.hr.zones.map((s) => Math.round(s / 60)).join("/")}`,
         m.hr.load !== null && `load ${m.hr.load}`,
       ]),
-    m.steps && line("steps", [`${m.steps.total}`, `${m.steps.perMin}/min`, `busiest minute ${m.steps.peakMin}`]),
     e &&
       line("efficiency", [
         e.beatsPerUnit !== null && `effort ${e.beatsPerUnit}/${UNIT_WON[e.unit]}`,
-        e.stepsPerUnit !== null && `${e.stepsPerUnit} steps/${UNIT_PLAYED[e.unit]}`,
-        e.beatsPerStep !== null && `effort ${e.beatsPerStep}/step`,
       ]),
     m.tally && line("points", [`won ${m.tally.won} of ${m.tally.won + m.tally.lost} ${m.tally.unit}s`]),
     o.note &&
@@ -115,7 +109,6 @@ export function overviewPrompt(
       r0(m.minutes),
       m.hr ? r0(m.hr.avg) : "-",
       m.hr?.load ?? "-",
-      m.steps ? r0(m.steps.perMin) : "-",
       e?.beatsPerUnit ?? "-",
       note?.rpe ?? "-",
       note?.text ? JSON.stringify(note.text.slice(0, 70)) : "",
@@ -123,7 +116,7 @@ export function overviewPrompt(
       .filter((v) => v !== null)
       .join("|");
   });
-  const header = ["date", o.sport === "all" ? "sport" : null, "opp", "res", "score", "min", "hr", "load", "steps/min", "effort/won", "rpe", "note"]
+  const header = ["date", o.sport === "all" ? "sport" : null, "opp", "res", "score", "min", "hr", "load", "effort/won", "rpe", "note"]
     .filter(Boolean)
     .join("|");
   const sports = o.sport === "all" ? Object.keys(o.summaries).filter((k) => k !== "all") : [o.sport];

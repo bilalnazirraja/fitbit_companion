@@ -252,7 +252,7 @@ function effortChart(m) {
   const sp = sportOf(m.sport);
   return (W) => {
     const hasHr = c.hr.length > 1;
-    const hasSteps = c.steps.length > 0;
+    const hasSteps = Boolean(c.steps && c.steps.length);
     const pad = { l: 36, r: 26 };
     const top = c.segments.length ? 22 : 8;
     const hrH = hasHr ? 172 : 0;

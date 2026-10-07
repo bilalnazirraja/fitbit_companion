@@ -1,6 +1,6 @@
-// Effort, movement and efficiency for every match you played, any sport, from the heart rate and
-// steps your watch recorded, plus the averages each match is compared with.
-import type { DailyContext, HrSample, Recording, Session, Side, StepInterval, StrokeScore } from "../model.ts";
+// Effort and efficiency for every match you played, any sport, from the heart rate your watch
+// recorded, plus the averages each match is compared with.
+import type { DailyContext, HrSample, Recording, Session, Side, StrokeScore } from "../model.ts";
 import type { Alignment } from "../sync/align.ts";
 import { downsample, percentile, resample1Hz, slice } from "../sync/hr.ts";
 import { mean } from "./stats.ts";
@@ -29,10 +29,6 @@ export interface Efficiency {
   unit: "point" | "game" | "hole";
   /** Heartbeats above resting per point/game you won, or per hole in golf. Lower is more economical. */
   beatsPerUnit: number | null;
-  /** Steps per point/game played, or per hole. */
-  stepsPerUnit: number | null;
-  /** Heartbeats above resting per step: what moving cost your heart. */
-  beatsPerStep: number | null;
 }
 
 export interface MatchView {
@@ -51,20 +47,18 @@ export interface MatchView {
   /** Points (squash rallies) or games (padel) won and lost over the whole match. */
   tally: { unit: "point" | "game"; won: number; lost: number } | null;
   hr: HrStats | null;
-  steps: { total: number; perMin: number; peakMin: number } | null;
   calories: number | null;
   efficiency: Efficiency | null;
   restingHr: { bpm: number; source: "day" | "typical" | "assumed" } | null;
   daily: DailyContext | null;
   /**
    * For the chart, relative to `start` (the match start): heart rate as [seconds, bpm] including
-   * two minutes either side, steps as [minute, count], and games/sets and rests as [from, to] seconds.
+   * two minutes either side, and games/sets and rests as [from, to] seconds.
    */
   chart: {
     start: number;
     end: number;
     hr: [number, number][];
-    steps: [number, number][];
     segments: [number, number][];
     rests: [number, number][];
   } | null;
@@ -78,7 +72,6 @@ export interface MatchContext {
   side: Side;
   alignment: Alignment | null;
   heartRate: HrSample[];
-  steps: StepInterval[];
   recordings: Recording[];
   hrMax: number | null;
   daily: DailyContext | null;
@@ -97,16 +90,7 @@ export function matchView(s: Session, ctx: MatchContext): MatchView {
       ? { bpm: ctx.typicalRestingHr, source: "typical" }
       : { bpm: ASSUMED_RESTING_HR, source: "assumed" };
   const hr = window ? hrStats(ctx.heartRate, window.start, window.end, ctx.hrMax, restingHr.bpm) : null;
-  const stepsData = window ? stepsIn(ctx.steps, window.start, window.end) : null;
   const minutes = window ? (window.end - window.start) / MIN : null;
-  const steps =
-    stepsData && minutes
-      ? {
-          total: stepsData.total,
-          perMin: round1(stepsData.total / minutes),
-          peakMin: Math.max(0, ...stepsData.perMinute.map(([, c]) => c)),
-        }
-      : null;
 
   const mine = (seg: Session["segments"][number]) => (side === "a" ? seg.scoreA : seg.scoreB);
   const theirs = (seg: Session["segments"][number]) => (side === "a" ? seg.scoreB : seg.scoreA);
@@ -124,7 +108,7 @@ export function matchView(s: Session, ctx: MatchContext): MatchView {
   if (s.winner) result = s.winner === side ? "win" : "loss";
   else if (racket && s.segments.length > 0) result = "draw";
 
-  const chart = window && (hr || stepsData) ? chartData(s, ctx, window, stepsData) : null;
+  const chart = window && hr ? chartData(s, ctx, window) : null;
   const calories = ctx.recordings
     .filter((r) => window && r.start >= window.start - 5 * MIN && r.end <= window.end + 5 * MIN && r.summary.calories)
     .reduce<number | null>((sum, r) => (sum ?? 0) + r.summary.calories!, null);
@@ -143,9 +127,8 @@ export function matchView(s: Session, ctx: MatchContext): MatchView {
     strokes: s.strokes ?? null,
     tally,
     hr,
-    steps,
     calories: calories === null ? null : Math.round(calories),
-    efficiency: efficiency(s, tally, hr, steps),
+    efficiency: efficiency(s, tally, hr),
     restingHr: hr ? restingHr : null,
     daily: ctx.daily,
     chart,
@@ -190,62 +173,18 @@ export function hrStats(hr: HrSample[], from: number, to: number, hrMax: number 
   };
 }
 
-/** Steps between `from` and `to`, with each watch interval spread evenly over its duration. */
-export function stepsIn(steps: StepInterval[], from: number, to: number): { total: number; perMinute: [number, number][] } | null {
-  const buckets = new Float64Array(Math.max(1, Math.ceil((to - from) / MIN)));
-  let any = false;
-  for (const s of steps) {
-    if (s.end <= from || s.start >= to) continue;
-    any = true;
-    const span = Math.max(1, s.end - s.start);
-    for (let t = Math.max(s.start, from); t < Math.min(s.end, to); ) {
-      const k = Math.floor((t - from) / MIN);
-      const next = Math.min(s.end, to, from + (k + 1) * MIN);
-      buckets[k] += (s.count * (next - t)) / span;
-      t = next;
-    }
-  }
-  if (!any) return null;
-  const perMinute = [...buckets].map((c, k) => [k, Math.round(c)] as [number, number]);
-  return { total: Math.round(buckets.reduce((acc, c) => acc + c, 0)), perMinute };
-}
-
-function efficiency(
-  s: Session,
-  tally: MatchView["tally"],
-  hr: HrStats | null,
-  steps: MatchView["steps"],
-): Efficiency | null {
+function efficiency(s: Session, tally: MatchView["tally"], hr: HrStats | null): Efficiency | null {
   const beats = hr?.extraBeats ?? null;
-  const moved = steps && steps.total >= 100 ? steps.total : null;
-  const beatsPerStep = beats !== null && moved !== null ? round2(beats / moved) : null;
-  let out: Efficiency | null = null;
-  if (s.sport === "golf" && s.strokes) {
-    const holes = s.strokes.holes;
-    out = {
-      unit: "hole",
-      beatsPerUnit: beats !== null ? round1(beats / holes) : null,
-      stepsPerUnit: moved !== null ? Math.round(moved / holes) : null,
-      beatsPerStep,
-    };
-  } else if (tally) {
-    const played = tally.won + tally.lost;
-    out = {
-      unit: tally.unit,
-      beatsPerUnit: beats !== null && tally.won > 0 ? round1(beats / tally.won) : null,
-      stepsPerUnit: moved !== null && played > 0 ? round1(moved / played) : null,
-      beatsPerStep,
-    };
-  }
-  if (!out || (out.beatsPerUnit === null && out.stepsPerUnit === null && out.beatsPerStep === null)) return null;
-  return out;
+  if (beats === null) return null;
+  if (s.sport === "golf" && s.strokes) return { unit: "hole", beatsPerUnit: round1(beats / s.strokes.holes) };
+  if (tally && tally.won > 0) return { unit: tally.unit, beatsPerUnit: round1(beats / tally.won) };
+  return null;
 }
 
 function chartData(
   s: Session,
   ctx: MatchContext,
   window: { start: number; end: number },
-  steps: { perMinute: [number, number][] } | null,
 ): NonNullable<MatchView["chart"]> {
   const from = window.start - 2 * MIN;
   const to = window.end + 2 * MIN;
@@ -270,7 +209,7 @@ function chartData(
       return seg;
     });
   }
-  return { start: window.start, end: window.end, hr, steps: steps?.perMinute ?? [], segments, rests };
+  return { start: window.start, end: window.end, hr, segments, rests };
 }
 
 export interface SportSummary {
@@ -280,7 +219,6 @@ export interface SportSummary {
   /** Most recent first, up to 10. */
   form: ("W" | "L" | "D")[];
   minutes: number;
-  steps: number;
   load: number;
   withHr: number;
   avg: {
@@ -288,10 +226,7 @@ export interface SportSummary {
     hr: number | null;
     maxHr: number | null;
     load: number | null;
-    stepsPerMin: number | null;
-    beatsPerStep: number | null;
     beatsPerUnit: number | null;
-    stepsPerUnit: number | null;
     /** Share of points (squash) or games (padel) won. */
     unitShare: number | null;
     strokes: number | null;
@@ -340,7 +275,6 @@ function summary(matches: MatchView[]): SportSummary {
       .slice(0, 10)
       .map((m) => (m.result === "win" ? "W" : m.result === "loss" ? "L" : "D")),
     minutes: Math.round(matches.reduce((n, m) => n + (m.minutes ?? 0), 0)),
-    steps: matches.reduce((n, m) => n + (m.steps?.total ?? 0), 0),
     load: matches.reduce((n, m) => n + (m.hr?.load ?? 0), 0),
     withHr: matches.filter((m) => m.hr).length,
     avg: {
@@ -348,10 +282,7 @@ function summary(matches: MatchView[]): SportSummary {
       hr: avg((m) => m.hr?.avg, 0),
       maxHr: avg((m) => m.hr?.max, 0),
       load: avg((m) => m.hr?.load, 0),
-      stepsPerMin: avg((m) => m.steps?.perMin),
-      beatsPerStep: avg((m) => m.efficiency?.beatsPerStep, 2),
       beatsPerUnit: avg((m) => m.efficiency?.beatsPerUnit),
-      stepsPerUnit: avg((m) => m.efficiency?.stepsPerUnit),
       unitShare: played > 0 ? Math.round((won / played) * 1000) / 1000 : null,
       strokes: avg((m) => m.strokes?.strokes),
       overPar: avg((m) => (m.strokes ? m.strokes.strokes - m.strokes.par : null)),

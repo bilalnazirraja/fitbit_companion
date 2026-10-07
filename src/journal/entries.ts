@@ -7,6 +7,12 @@ export const SPORTS = ["squash", "padel", "golf"] as const;
 export type Sport = (typeof SPORTS)[number];
 export const JOURNAL_SOURCE = "journal";
 
+export interface LivePoint {
+  g: number;
+  w: Side;
+  at: number;
+}
+
 export interface JournalEntry {
   id: string;
   sport: Sport;
@@ -21,6 +27,8 @@ export interface JournalEntry {
   /** Squash games or padel sets, your score first. Empty for golf. */
   scores: [number, number][];
   golf: StrokeScore | null;
+  /** Squash scored live, point by point: game, who won it ("a" = you), and when. */
+  points?: LivePoint[];
   /** The watch workout the times came from, if you picked one. */
   workoutId: string | null;
   createdAt: number;
@@ -74,8 +82,19 @@ export function parseEntry(body: unknown, now: number, existing?: JournalEntry):
 
   let scores: [number, number][] = [];
   let golf: StrokeScore | null = null;
+  let points: LivePoint[] | undefined;
   if (sport === "golf") {
     golf = parseGolf(b.golf);
+  } else if (sport === "squash" && Array.isArray(b.points) && b.points.length > 0) {
+    // Live scoring: the game scores follow from the points.
+    points = parsePoints(b.points);
+    scores = [];
+    for (const p of points) {
+      while (scores.length < p.g) scores.push([0, 0]);
+      scores[p.g - 1][p.w === "a" ? 0 : 1]++;
+    }
+    scores = scores.filter(([x, y]) => x !== y);
+    if (scores.length === 0) throw new InputError("Finish at least one game before saving.");
   } else {
     const rows = Array.isArray(b.scores) ? b.scores : [];
     for (const [i, row] of rows.entries()) {
@@ -105,10 +124,26 @@ export function parseEntry(body: unknown, now: number, existing?: JournalEntry):
     partner,
     scores,
     golf,
+    ...(points ? { points } : {}),
     workoutId,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
+}
+
+function parsePoints(list: unknown[]): LivePoint[] {
+  if (list.length > 600) throw new InputError("That's more points than a match can have.");
+  let last = 0;
+  return list.map((raw) => {
+    const p = (raw ?? {}) as Record<string, unknown>;
+    const g = Number(p.g);
+    const at = Number(p.at);
+    if (!Number.isInteger(g) || g < 1 || g > 5 || (p.w !== "a" && p.w !== "b") || !Number.isFinite(at) || at < last) {
+      throw new InputError("The live score couldn't be read. Try finishing the match again.");
+    }
+    last = at;
+    return { g, w: p.w, at: Math.round(at) };
+  });
 }
 
 function parseGolf(value: unknown): StrokeScore {
@@ -163,9 +198,10 @@ export function entryToSession(e: JournalEntry, me: { id: string; name: string }
     endedAt: end,
     participants,
     segments,
-    events: [],
+    events: (e.points ?? []).map((p, seq) => ({ seq, segment: p.g, kind: "point" as const, wonBy: p.w, at: p.at })),
     winner: e.sport === "golf" || won === lost ? null : won > lost ? "a" : "b",
-    quality: { logComplete: false, timing: "live", notes: [] },
+    // Live-scored points reproduce the game scores, so the rally analysis can use them.
+    quality: { logComplete: Boolean(e.points?.length), timing: "live", notes: [] },
     ...(e.golf ? { strokes: e.golf } : {}),
     utcOffsetMinutes: e.utcOffsetMinutes,
   };

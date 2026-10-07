@@ -23,7 +23,7 @@ export const dashboardCss = css;
 // Material Symbols, trimmed to the icons the app uses (the full font is several megabytes).
 // Names must stay in alphabetical order.
 export const ICONS = [
-  "add", "arrow_back", "auto_awesome", "bedtime", "bolt", "calendar_month", "chat_bubble", "check", "close",
+  "add", "arrow_back", "arrow_forward", "auto_awesome", "bedtime", "bolt", "calendar_month", "chat_bubble", "check", "close",
   "contrast", "dark_mode", "delete", "edit", "edit_note", "emoji_events", "expand_more", "favorite", "flag", "group",
   "help", "home", "info", "insights", "key", "light_mode", "link", "logout", "monitor_heart", "padel", "person",
   "refresh", "schedule", "scoreboard", "settings", "speed", "sports_golf", "sports_tennis", "steps", "sync",
@@ -47,6 +47,8 @@ export interface AppState {
   data: Dataset;
   /** Served by the web app, so logging, notes, sync and AI work (not a file opened from disk). */
   hosted: boolean;
+  /** Signed in: may log matches, write notes, sync and ask the AI. Visitors only look. */
+  canEdit: boolean;
   /** Your name, for the greeting. */
   name: string | null;
   notes: Record<string, Note>;
@@ -102,6 +104,7 @@ export function staticState(data: Dataset): AppState {
   return {
     data,
     hosted: false,
+    canEdit: false,
     name: data.me?.name ?? null,
     notes: {},
     entries: {},

@@ -6,6 +6,8 @@ let S = JSON.parse(document.getElementById("data").textContent);
 const root = document.getElementById("app");
 const NS = "http://www.w3.org/2000/svg";
 const HOSTED = Boolean(S.hosted);
+/** Signed in: may log, edit, sync and ask the AI. Everyone else can look. */
+const EDIT = HOSTED && Boolean(S.canEdit);
 /** Page builders by route name; each returns { title, body, actions, ... } (see render()). */
 const PAGES = {};
 
@@ -293,7 +295,7 @@ function setTheme(t) {
 // ---------- sync ----------
 let syncing = false;
 function syncButton() {
-  if (!HOSTED || !S.google || !S.google.configured) return null;
+  if (!EDIT || !S.google || !S.google.configured) return null;
   const last = S.google.lastSync;
   const failed = last && !last.ok;
   const label = syncing ? "Syncing your watch data" : last ? `Sync watch data (last: ${dfStamp.format(last.at)})` : "Sync watch data";
@@ -363,6 +365,7 @@ function navLinks(active) {
 }
 function avatarButton() {
   if (!HOSTED) return null;
+  if (!EDIT) return h("a", { class: "btn text", href: "/login" }, icon("key"), "Sign in");
   const initial = (S.name || "Y").trim().charAt(0).toUpperCase();
   return h("a", { class: "icon-btn", href: href("settings"), "aria-label": "Settings", title: "Settings" }, h("span", { class: "avatar", text: initial }));
 }
@@ -395,7 +398,7 @@ function render() {
   const full = Boolean(view.full);
   const active = view.nav || name;
   const fab =
-    HOSTED && !full && view.fab !== false
+    EDIT && !full && view.fab !== false
       ? h(
           "a",
           { class: `fab floating${view.fab === "extended" ? " extended" : ""}`, href: href("log"), "aria-label": "Log a match" },
@@ -412,7 +415,7 @@ function render() {
         : h(
             "nav",
             { class: "rail", "aria-label": "Main" },
-            HOSTED ? h("a", { class: "fab", href: href("log"), "aria-label": "Log a match", title: "Log a match" }, icon("add")) : null,
+            EDIT ? h("a", { class: "fab", href: href("log"), "aria-label": "Log a match", title: "Log a match" }, icon("add")) : null,
             navLinks(active),
           ),
       h(
@@ -420,7 +423,12 @@ function render() {
         { class: "app-body" },
         topBar(view),
         syncing ? h("div", { class: "progress indeterminate sync-progress", role: "progressbar", "aria-label": "Syncing" }, h("i")) : null,
-        h("main", { class: "main", id: "main" }, view.body),
+        h(
+          "main",
+          { class: "main", id: "main" },
+          view.body,
+          h("footer", { class: "credit body-small" }, "Powered by ", h("a", { href: "https://rapteck.com/", target: "_blank", rel: "noopener", text: "Rapteck" })),
+        ),
       ),
       full ? null : h("nav", { class: "navbar", "aria-label": "Main" }, navLinks(active)),
       fab,

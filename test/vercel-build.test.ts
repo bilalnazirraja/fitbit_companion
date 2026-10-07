@@ -68,8 +68,9 @@ test("the Vercel build serves the app from one bundled function", async () => {
   assert.match(await login.text(), /Sign in/);
 
   const home = await fetch(`${site}/`, { redirect: "manual" });
-  assert.equal(home.status, 303);
-  assert.equal(home.headers.get("location"), "/login");
+  assert.equal(home.status, 200, "anyone can view");
+  const sync = await fetch(`${site}/sync`, { method: "POST" });
+  assert.equal(sync.status, 401, "changes need sign-in");
 
   const signIn = await fetch(`${site}/login`, {
     method: "POST",

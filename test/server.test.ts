@@ -129,23 +129,59 @@ const reply = async (res: Response) => (await res.json()) as Reply;
 const embedded = (html: string) =>
   JSON.parse(html.match(/<script id="data" type="application\/json">([\s\S]*?)<\/script>/)![1]);
 
-test("nothing is visible without the password", async () => {
+test("anyone can look; only you can change anything", async () => {
   const { open } = setup();
   const home = await open("/");
-  assert.equal(home.status, 303);
-  assert.equal(home.headers.get("location"), "/login");
+  assert.equal(home.status, 200, "the journal is public");
+  const visitor = embedded(await home.text());
+  assert.equal(visitor.canEdit, false);
+  assert.equal((await open("/api/data")).status, 200);
   assert.equal((await open("/sync", { method: "POST" })).status, 401);
-  assert.equal((await open("/api/data")).status, 401, "the API answers 401, not a redirect");
+  assert.equal((await open("/api/matches", send("POST", { sport: "squash" }))).status, 401);
+  assert.equal((await open("/api/ai", send("POST", { scope: "overview" }))).status, 401, "visitors can't spend on AI");
+  assert.equal((await open("/api/workouts?from=0&to=1")).status, 401);
+  assert.equal((await open("/connect")).status, 303);
   assert.equal((await open("/login", form({ password: "wrong" }))).status, 401);
 
   const ok = await open("/login", form({ password: "correct horse" }));
   assert.equal(ok.status, 303);
   const page = await (await open("/")).text();
-  assert.match(page, /Performance Journal/);
+  assert.match(page, /Powered by/);
   const state = embedded(page);
-  assert.equal(state.hosted, true);
+  assert.equal(state.canEdit, true);
   assert.equal(state.league.players.length, 6, "the league is imported once");
   assert.equal(state.data.matches.length, 0, "nobody's matches until you say which player you are");
+});
+
+test("a live-scored match joins the rally analysis", async () => {
+  const { open } = setup();
+  await open("/login", form({ password: "correct horse" }));
+  await open("/me", send("POST", { me: "Bilal" }));
+  const t = Date.UTC(2026, 9, 6, 14, 0);
+  // 11-9 then 11-4, alternating points so no game ends early.
+  const points: { g: number; w: string; at: number }[] = [];
+  const game = (g: number, a: number, b: number) => {
+    const seq: string[] = [];
+    while (a + b > 0) {
+      if (b > 0 && (seq.length % 2 === 1 || a === 0)) {
+        seq.push("b");
+        b--;
+      } else {
+        seq.push("a");
+        a--;
+      }
+    }
+    for (const w of seq) points.push({ g, w, at: t + points.length * 20_000 });
+  };
+  game(1, 11, 9);
+  game(2, 11, 4);
+  const saved = await reply(await open("/api/matches", send("POST", { sport: "squash", startedAt: t, endedAt: t + points.length * 20_000 + 60_000, opponents: ["Usama"], points })));
+  assert.equal(saved.ok, true, saved.message);
+  const m = saved.state.data.matches.find((x: { id: string }) => x.id === saved.id);
+  assert.deepEqual(m.score, [[11, 9], [11, 4]]);
+  assert.equal(m.rallies, true);
+  const sv = saved.state.data.sessions.find((x: { id: string }) => x.id === saved.id);
+  assert.equal(sv.rallies.length, 35);
 });
 
 test("only your own matches are kept", async () => {
@@ -162,7 +198,7 @@ test("only your own matches are kept", async () => {
   assert.equal(net.calls.filter((c) => c.startsWith("scores.test")).length, 1, "syncing no longer reads the scoring app");
 });
 
-test("connect Google Health, sync, and get heart rate and steps on your matches", async () => {
+test("connect Google Health, sync, and get heart rate on your matches", async () => {
   const { open, kv, net } = setup();
   await open("/login", form({ password: "correct horse" }));
 
@@ -188,8 +224,8 @@ test("connect Google Health, sync, and get heart rate and steps on your matches"
   const state = embedded(await (await open("/")).text());
   assert.equal(state.data.me.name, "Usama");
   assert.ok(state.data.quality.withHr >= 15, `${state.data.quality.withHr} matches with heart rate`);
-  const withSteps = state.data.matches.filter((m: { steps: unknown; efficiency: unknown }) => m.steps && m.efficiency);
-  assert.ok(withSteps.length >= 15, `${withSteps.length} matches with steps and efficiency`);
+  const efficient = state.data.matches.filter((m: { efficiency: unknown }) => m.efficiency);
+  assert.ok(efficient.length >= 15, `${efficient.length} matches with efficiency`);
   assert.ok([...kv.data.keys()].some((k) => k.startsWith("pj:hr:")), "heart rate stored per day");
 
   // A second sync only lists workouts; heart rate that's already in isn't downloaded again.
@@ -240,7 +276,7 @@ test("log a match with how it felt, then edit and delete it", async () => {
   assert.equal((await open("/api/matches/csl:whatever", { method: "DELETE", headers: { origin: BASE } })).status, 400, "imported matches can't be deleted");
 });
 
-test("a logged match gets the heart rate and steps of the watch workout picked for it", async () => {
+test("a logged match gets the heart rate of the watch workout picked for it", async () => {
   const session = syntheticMatch();
   const sim = simulateSession(session, mulberry32(4), {}, "a")!;
   // Whole milliseconds, as the API reports them.
@@ -281,9 +317,8 @@ test("a logged match gets the heart rate and steps of the watch workout picked f
   assert.equal(m.startedAt, recording.start);
   assert.equal(m.endedAt, recording.end);
   assert.ok(m.hr && m.hr.avg > 100, "heart rate from the workout");
-  assert.ok(m.steps && m.steps.total > 1000, "steps from the workout");
   assert.equal(m.tally.won, 28);
-  assert.ok(m.efficiency.beatsPerUnit > 0 && m.efficiency.stepsPerUnit > 0);
+  assert.ok(m.efficiency.beatsPerUnit > 0);
   assert.equal(m.chart.segments.length, 3, "games placed on the clock");
 });
 

@@ -2,7 +2,7 @@
 // Only matches not synced yet are downloaded, so repeat syncs are quick.
 import type { HrSample, Recording, Session, TimeRange, WearableData, WearableProvider } from "../model.ts";
 import { coverage } from "./hr.ts";
-import { mergeDaily, mergeSamples, mergeSteps } from "./merge.ts";
+import { mergeDaily, mergeSamples } from "./merge.ts";
 
 const MIN = 60_000;
 const DAY = 86_400_000;
@@ -90,7 +90,6 @@ export async function syncWearable(
     log(`Heart rate ${i + 1}/${groups.length}: ${stamp(g.range.from)} to ${stamp(g.range.to)}`);
     const samples = await provider.heartRate(g.range);
     heartRate = mergeSamples(heartRate, samples);
-    if (provider.steps) steps = mergeSteps(steps, await provider.steps(g.range));
     for (let t = g.range.from; t <= g.range.to; t += DAY) changedDays.add(day(t));
     changedDays.add(day(g.range.to));
     for (const job of g.jobs) {

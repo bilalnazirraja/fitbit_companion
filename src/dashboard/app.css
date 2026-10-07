@@ -880,6 +880,23 @@ th.num, td.num { text-align: right; }
 .solo-card form { margin-top: 12px; }
 .solo-card .btn { align-self: flex-start; }
 
+/* ---------- live scoring ---------- */
+.live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.live-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  min-height: 46vh; border: 0; border-radius: var(--card-radius); cursor: pointer;
+  background: var(--md-surface-container-high); color: var(--md-on-surface);
+  position: relative; overflow: hidden; touch-action: manipulation;
+}
+.live-btn.mine { background: var(--md-primary-container); color: var(--md-on-primary-container); }
+.live-btn:active { transform: scale(0.98); }
+.live-btn:disabled { opacity: 0.4; }
+.live-score { font: 500 88px/1 var(--font); letter-spacing: -2px; }
+
+/* ---------- credit ---------- */
+.credit { text-align: center; color: var(--md-on-surface-variant); padding: 32px 0 8px; }
+.credit a { color: var(--md-on-surface); font-weight: 500; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
 }

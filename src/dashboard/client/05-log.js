@@ -11,7 +11,7 @@ let workoutsRequest = 0;
 let saving = false;
 
 PAGES.log = (r) => {
-  if (!HOSTED) return notFoundView("Logging matches works in the web app.");
+  if (!EDIT) return notFoundView("Sign in to log a match.");
   if (r.id && !S.entries[r.id]) return notFoundView("Only matches you logged in the app can be edited.");
   const key = r.id || "";
   if (!draft || draftFor !== key) {
@@ -141,6 +141,15 @@ function sportSection() {
   return formSection(
     "Sport",
     "sports_tennis",
+    draft.sport === "squash" && !draft.id
+      ? h(
+          "a",
+          { class: "card tonal link", href: href("live"), style: "display:flex;gap:12px;align-items:center;margin-bottom:12px" },
+          icon("timer"),
+          h("span", { class: "li-body" }, h("span", { class: "title-small", style: "display:block", text: "Score it live, point by point" }), h("span", { class: "body-small muted", text: "Tap who won each point while you play: it feeds the pressure and momentum analysis." })),
+          icon("arrow_forward"),
+        )
+      : null,
     h(
       "div",
       { class: "segmented", role: "group", "aria-label": "Sport" },
@@ -289,7 +298,6 @@ function workoutChoice(w) {
     `${dfTime.format(w.start)}–${dfTime.format(w.end)}`,
     duration((w.end - w.start) / 60_000),
     w.avgHr ? `${Math.round(w.avgHr)} bpm` : null,
-    w.steps ? `${int(w.steps)} steps` : null,
   ].filter(Boolean);
   return h(
     "button",
@@ -630,7 +638,7 @@ async function saveDraft() {
   draftFor = null;
   location.replace(href("match", res.id));
   const fetch = S.google && S.google.connected;
-  snack(fetch ? "Saved. Fetching heart rate and steps…" : "Saved.");
+  snack(fetch ? "Saved. Fetching heart rate…" : "Saved.");
   if (fetch) syncNow();
 }
 

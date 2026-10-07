@@ -431,7 +431,6 @@ export function buildDataset(all: Session[], wearable: WearableData | null, opts
             side: s.participants.find((p) => p.id === me.id)!.side,
             alignment: alignments.get(s.id) ?? null,
             heartRate: wearable?.heartRate ?? [],
-            steps: wearable?.steps ?? [],
             recordings: wearable?.recordings ?? [],
             hrMax,
             daily: dailyFor(s),
