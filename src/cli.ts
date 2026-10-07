@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildDataset } from "./analysis/dataset.ts";
 import { config } from "./config.ts";
-import { renderDashboard } from "./dashboard/render.ts";
+import { renderApp, staticState } from "./dashboard/render.ts";
 import { simulateWearable } from "./demo/simulate.ts";
 import type { Session, WearableData } from "./model.ts";
 import { fetchLeagueState, parseLeagueState, toSessions, type LeagueState } from "./sources/club-squash-league.ts";
@@ -77,8 +77,14 @@ const commands: Record<string, () => Promise<void> | void> = {
     const sessions = loadSessions();
     const wearable = readJson<WearableData>(paths.wearable) ?? null;
     const me = flags.me ?? config.me;
-    if (wearable && !me) console.warn("Set ME in .env so your heart rate is matched to your games (npm run whoami helps).");
-    const dataset = buildDataset(sessions, wearable, { me, hrMax: config.hrMax, breakSec: config.gameBreakSeconds });
+    if (!me) throw new Error("Set ME=<your name> in .env first: the dashboard shows your matches only (npm run whoami helps).");
+    const dataset = buildDataset(sessions, wearable, {
+      me,
+      hrMax: config.hrMax,
+      breakSec: config.gameBreakSeconds,
+      onlyMine: true,
+      players: [me],
+    });
     writeJson(paths.dataset, dataset);
     publish(dataset, "index.html");
   },
@@ -91,7 +97,7 @@ const commands: Record<string, () => Promise<void> | void> = {
       utcOffsetMinutes: -new Date().getTimezoneOffset(),
     });
     writeJson(paths.demoWearable, wearable);
-    const dataset = buildDataset(sessions, wearable, { me, breakSec: config.gameBreakSeconds, demo: true });
+    const dataset = buildDataset(sessions, wearable, { me, breakSec: config.gameBreakSeconds, demo: true, onlyMine: true, players: [me] });
     console.log(`Demo: simulated heart rate for ${me}'s ${wearable.recordings.length} timed matches (scores are real).`);
     publish(dataset, "demo.html");
   },
@@ -173,7 +179,7 @@ function archivePage(dataType: string, filter: string, page: number, body: unkno
 
 function publish(dataset: ReturnType<typeof buildDataset>, file: string): void {
   const out = join(config.dashboardDir, file);
-  writeText(out, renderDashboard(dataset));
+  writeText(out, renderApp(staticState(dataset)));
   const q = dataset.quality;
   console.log(
     `${q.matches} matches (${q.completeLogs} with full point logs), ${q.withHr} with heart rate.` +

@@ -10,6 +10,8 @@ const NEARBY_MS = 10 * MIN;
 
 export interface SyncOptions {
   me?: string;
+  /** Which matches are yours (default: the ones `me` played); their heart rate is fetched even without a workout. */
+  mine?: (s: Session) => boolean;
   from?: number;
   to?: number;
   log?: (msg: string) => void;
@@ -61,11 +63,13 @@ export async function syncWearable(
   log(`Found ${found.length} workouts, ${recordings.length} during a match.`);
 
   const jobs: Job[] = recordings.map((r) => ({ key: `rec:${r.id}`, range: { from: r.start - 5 * MIN, to: r.end + 10 * MIN }, recording: r }));
-  if (opts.me) {
+  const mine = opts.mine ?? (opts.me ? (s: Session) => plays(s, opts.me!) : null);
+  if (mine) {
     // Matches you played without starting the watch: all-day HR may still cover them.
     for (const s of timed) {
-      if (plays(s, opts.me) && s.quality.timing !== "untimed" && !recordings.some((r) => overlapsSession(s, r))) {
-        jobs.push({ key: `match:${s.id}`, range: { from: s.startedAt - 10 * MIN, to: s.endedAt! + 10 * MIN } });
+      if (mine(s) && s.quality.timing !== "untimed" && !recordings.some((r) => overlapsSession(s, r))) {
+        // The times are part of the key, so a match whose times are corrected gets downloaded again.
+        jobs.push({ key: `match:${s.id}@${s.startedAt}-${s.endedAt}`, range: { from: s.startedAt - 10 * MIN, to: s.endedAt! + 10 * MIN } });
       }
     }
   }

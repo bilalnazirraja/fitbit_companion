@@ -38,6 +38,16 @@ export interface ScoreEvent {
  */
 export type TimingQuality = "live" | "suspect" | "untimed";
 
+/** Stroke play (golf): total strokes against par, optionally hole by hole. */
+export interface StrokeScore {
+  course: string | null;
+  holes: number;
+  strokes: number;
+  par: number;
+  /** Strokes on each hole when entered hole by hole; null where left blank. */
+  perHole: (number | null)[] | null;
+}
+
 export interface Session {
   id: string;
   source: string;
@@ -55,6 +65,10 @@ export interface Session {
     timing: TimingQuality;
     notes: string[];
   };
+  /** Golf. */
+  strokes?: StrokeScore;
+  /** The player's UTC offset when the match was played, if the source knows it. */
+  utcOffsetMinutes?: number;
 }
 
 export interface HrSample {

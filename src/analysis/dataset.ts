@@ -3,6 +3,7 @@ import type { DailyContext, Session, Side, WearableData } from "../model.ts";
 import { rallyContexts, shuffleGame, type RallyContext } from "../sports/squash.ts";
 import { alignSession, type Alignment, type BreakRecovery } from "../sync/align.ts";
 import { percentile, slice } from "../sync/hr.ts";
+import { matchView, observedHrMax, summarize, type MatchView, type Summaries } from "./matches.ts";
 import { mean, mulberry32, sd, slope, wilson } from "./stats.ts";
 
 export interface BuildOptions {
@@ -10,8 +11,10 @@ export interface BuildOptions {
   hrMax?: number;
   breakSec: number;
   demo?: boolean;
-  /** Only work out insights for these players (default: everyone, which the dashboard needs). */
+  /** Only work out insights for these players (default: everyone). */
   players?: string[];
+  /** Drop every match `me` didn't play, so nobody else's data is kept. */
+  onlyMine?: boolean;
 }
 
 export interface Bucket {
@@ -58,7 +61,6 @@ export interface AlignView {
   /** Parallel to SessionView.rallies: [start, end, mean HR]. */
   rallies: [number, number, number | null][];
   hr: Alignment["hr"];
-  series: [number, number][];
   recordingOffsetSec: number | null;
 }
 
@@ -124,7 +126,11 @@ export interface PlayerInsights {
   headlines: Headline[];
 }
 
+/** Bumped when the shape changes, so stored analysis from an older version gets rebuilt. */
+export const DATASET_VERSION = 2;
+
 export interface Dataset {
+  version: number;
   generatedAt: number;
   demo: boolean;
   me: { id: string; name: string } | null;
@@ -132,8 +138,12 @@ export interface Dataset {
   hrMaxSource: "config" | "observed" | null;
   wearable: { provider: string; syncedAt: number; recordings: number; samples: number } | null;
   players: { id: string; name: string }[];
+  /** Squash matches, for the rally-by-rally analysis. */
   sessions: SessionView[];
   insights: Record<string, PlayerInsights>;
+  /** Every match `me` played, any sport, newest first, with heart rate, steps and efficiency. */
+  matches: MatchView[];
+  summaries: Summaries;
   quality: { matches: number; completeLogs: number; live: number; suspect: number; untimed: number; withHr: number };
 }
 
@@ -332,18 +342,22 @@ const HR_ZONES: BucketDef[] = [
   { key: "z95", label: "95%+", test: (r) => r.hrPct !== null && r.hrPct >= 0.95 },
 ];
 
-export function buildDataset(sessions: Session[], wearable: WearableData | null, opts: BuildOptions): Dataset {
-  const players = uniquePlayers(sessions);
+export function buildDataset(all: Session[], wearable: WearableData | null, opts: BuildOptions): Dataset {
+  const players = uniquePlayers(all);
   const me = opts.me ? (players.find((p) => p.name.toLowerCase() === opts.me!.toLowerCase()) ?? null) : null;
   if (opts.me && !me) {
     throw new Error(`ME="${opts.me}" isn't a player in the scoring app. Players: ${players.map((p) => p.name).join(", ")}`);
   }
+  const isMine = (s: Session) => me !== null && s.participants.some((p) => p.id === me.id);
+  const sessions = opts.onlyMine && me ? all.filter(isMine) : all;
+  const squash = sessions.filter((s) => s.sport === "squash");
 
-  // Heart rate belongs to the watch owner, so only their matches are aligned.
+  // Heart rate belongs to the watch owner, so only their matches are aligned. Games and rests are
+  // placed on the clock for squash; other sports use the match times as they are.
   const alignments = new Map<string, Alignment>();
   if (me && wearable) {
-    for (const s of sessions) {
-      if (!s.participants.some((p) => p.id === me.id)) continue;
+    for (const s of squash) {
+      if (!isMine(s)) continue;
       const a = alignSession(s, wearable.recordings, wearable.heartRate, { breakSec: opts.breakSec });
       if (a?.hr) alignments.set(s.id, a);
     }
@@ -351,25 +365,29 @@ export function buildDataset(sessions: Session[], wearable: WearableData | null,
 
   let hrMax = opts.hrMax ?? null;
   let hrMaxSource: Dataset["hrMaxSource"] = hrMax ? "config" : null;
-  if (!hrMax && wearable && alignments.size > 0) {
-    const bpm: number[] = [];
-    for (const a of alignments.values()) for (const s of slice(wearable.heartRate, a.window.start, a.window.end)) bpm.push(s.bpm);
-    hrMax = Math.round(percentile(bpm, 0.995));
-    hrMaxSource = "observed";
+  if (!hrMax && wearable && me) {
+    const windows = sessions.filter(isMine).flatMap((s) => {
+      const a = alignments.get(s.id);
+      if (a) return [a.window];
+      return s.sport !== "squash" && s.endedAt !== null && s.quality.timing !== "untimed" ? [{ start: s.startedAt, end: s.endedAt }] : [];
+    });
+    hrMax = observedHrMax(wearable.heartRate, windows);
+    if (hrMax) hrMaxSource = "observed";
   }
 
   const dailyByDate = new Map((wearable?.daily ?? []).map((d) => [d.date, d]));
-  const views = sessions.map((s): SessionView => {
+  const dailyFor = (s: Session): DailyContext | null => {
+    if (!wearable || !isMine(s)) return null;
+    const a = alignments.get(s.id);
+    const rec = a ? wearable.recordings.find((r) => a.recordingIds.includes(r.id)) : undefined;
+    const offsetMin = s.utcOffsetMinutes ?? (rec ? rec.utcOffsetMinutes : -new Date(s.startedAt).getTimezoneOffset());
+    return dailyByDate.get(new Date(s.startedAt + offsetMin * 60_000).toISOString().slice(0, 10)) ?? null;
+  };
+
+  const views = squash.map((s): SessionView => {
     const a = alignments.get(s.id);
     const ctx = s.quality.logComplete ? rallyContexts(s, "a") : [];
-    const mine = me !== null && s.participants.some((p) => p.id === me.id);
     const [pa, pb] = s.participants;
-    let daily: DailyContext | null = null;
-    if (mine && wearable) {
-      const rec = a ? wearable.recordings.find((r) => a.recordingIds.includes(r.id)) : undefined;
-      const offsetMin = rec ? rec.utcOffsetMinutes : -new Date(s.startedAt).getTimezoneOffset();
-      daily = dailyByDate.get(new Date(s.startedAt + offsetMin * 60_000).toISOString().slice(0, 10)) ?? null;
-    }
     return {
       id: s.id,
       startedAt: s.startedAt,
@@ -392,18 +410,39 @@ export function buildDataset(sessions: Session[], wearable: WearableData | null,
         p: Math.round(c.pressure * 100),
       })),
       align: a ? toView(a) : null,
-      daily,
+      daily: dailyFor(s),
     };
   });
 
   const insights: Record<string, PlayerInsights> = {};
   const wanted = opts.players?.map((n) => n.toLowerCase());
-  for (const p of players) {
+  for (const p of uniquePlayers(squash)) {
     if (wanted && !wanted.includes(p.name.toLowerCase())) continue;
-    insights[p.id] = playerInsights(p, sessions, views, alignments, me?.id === p.id, hrMax, wearable);
+    insights[p.id] = playerInsights(p, squash, views, alignments, me?.id === p.id, hrMax, wearable);
   }
 
+  const resting = (wearable?.daily ?? []).map((d) => d.restingHr).filter((v): v is number => typeof v === "number");
+  const typicalRestingHr = resting.length > 0 ? Math.round(percentile(resting, 0.5)) : null;
+  const matches = me
+    ? sessions
+        .filter(isMine)
+        .map((s) =>
+          matchView(s, {
+            side: s.participants.find((p) => p.id === me.id)!.side,
+            alignment: alignments.get(s.id) ?? null,
+            heartRate: wearable?.heartRate ?? [],
+            steps: wearable?.steps ?? [],
+            recordings: wearable?.recordings ?? [],
+            hrMax,
+            daily: dailyFor(s),
+            typicalRestingHr,
+          }),
+        )
+        .sort((a, b) => b.startedAt - a.startedAt)
+    : [];
+
   return {
+    version: DATASET_VERSION,
     generatedAt: Date.now(),
     demo: Boolean(opts.demo),
     me,
@@ -417,16 +456,18 @@ export function buildDataset(sessions: Session[], wearable: WearableData | null,
           samples: wearable.heartRate.length,
         }
       : null,
-    players,
+    players: opts.onlyMine && me ? [me] : players,
     sessions: views,
     insights,
+    matches,
+    summaries: summarize(matches),
     quality: {
       matches: sessions.length,
       completeLogs: sessions.filter((s) => s.quality.logComplete).length,
       live: sessions.filter((s) => s.quality.timing === "live").length,
       suspect: sessions.filter((s) => s.quality.timing === "suspect").length,
       untimed: sessions.filter((s) => s.quality.timing === "untimed").length,
-      withHr: alignments.size,
+      withHr: matches.filter((m) => m.hr).length,
     },
   };
 }
@@ -446,7 +487,6 @@ function toView(a: Alignment): AlignView {
     breaks: a.breaks,
     rallies: a.rallies.map((r) => [Math.round(r.start), Math.round(r.end), r.hrMean]),
     hr: a.hr,
-    series: a.series,
     recordingOffsetSec: a.recordingOffsetSec,
   };
 }

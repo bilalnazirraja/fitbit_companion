@@ -2,7 +2,7 @@
 // Heart rate here depends only on effort and time (warm-up, rallies, rests, drift), never on the
 // score, so the demo cannot show patterns that aren't there. It is never mixed with real data.
 import { mulberry32 } from "../analysis/stats.ts";
-import type { DailyContext, HrSample, Recording, Session, WearableData } from "../model.ts";
+import type { DailyContext, HrSample, Recording, Session, StepInterval, WearableData } from "../model.ts";
 import { mergeSamples } from "../sync/merge.ts";
 
 export interface SimOptions {
@@ -143,6 +143,8 @@ export function simulateWearable(
   }
   // Back-to-back matches overlap at the edges; the later match's warm-up wins.
   const samples = mergeSamples(...perSession);
+  // Steps come from their own random stream, so adding them left the heart rate unchanged.
+  const steps = simulateSteps(recordings, truths, mulberry32((opts.seed ?? 7) + 7919));
   const daily: DailyContext[] = [...days].sort().map((date) => ({
     date,
     restingHr: Math.round((opts.restingHr ?? 60) + 3 * gauss(rand)),
@@ -150,7 +152,26 @@ export function simulateWearable(
     sleepMinutes: Math.round(400 + 50 * gauss(rand)),
   }));
   return {
-    wearable: { provider: "demo", syncedAt: Date.now(), recordings, heartRate: samples, steps: [], daily },
+    wearable: { provider: "demo", syncedAt: Date.now(), recordings, heartRate: samples, steps, daily },
     truths,
   };
+}
+
+/** One interval a minute, like the watch: busy during rallies, a trickle at rest. */
+function simulateSteps(recordings: Recording[], truths: SimTruth[], rand: () => number): StepInterval[] {
+  const out = new Map<number, StepInterval>();
+  recordings.forEach((rec, i) => {
+    const truth = truths[i];
+    const first = truth.games[0]?.start ?? rec.start;
+    const last = truth.games[truth.games.length - 1]?.end ?? rec.end;
+    const minuteStart = Math.floor(rec.start / 60_000) * 60_000;
+    for (let t = minuteStart; t < rec.end; t += 60_000) {
+      const mid = t + 30_000;
+      const resting = truth.breaks.some((b) => mid >= b.start && mid < b.end);
+      const playing = mid >= first && mid < last && !resting;
+      const count = playing ? 55 + 45 * rand() : resting ? 4 + 8 * rand() : 12 + 20 * rand();
+      out.set(t, { start: t, end: t + 60_000, count: Math.round(count) });
+    }
+  });
+  return [...out.values()].sort((a, b) => a.start - b.start);
 }

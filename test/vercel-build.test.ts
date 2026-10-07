@@ -25,7 +25,7 @@ function listen(handler: (req: IncomingMessage, res: ServerResponse) => void): P
 test("the Vercel build serves the app from one bundled function", async () => {
   await buildVercel(out);
   const fn = join(out, "functions", "index.func");
-  for (const f of ["index.mjs", "app.css", "app.js", ".vc-config.json"]) assert.ok(existsSync(join(fn, f)), f);
+  for (const f of ["index.mjs", "app.css", "client/01-core.js", ".vc-config.json"]) assert.ok(existsSync(join(fn, f)), f);
   const config = JSON.parse(readFileSync(join(out, "config.json"), "utf8"));
   assert.equal(config.version, 3);
 
@@ -84,7 +84,8 @@ test("the Vercel build serves the app from one bundled function", async () => {
   assert.equal(page.status, 200);
   const html = await page.text();
   assert.match(html, /Hello there/, "query string survives the rewrite");
-  assert.match(html, /--series-1/, "bundled stylesheet loaded");
+  assert.match(html, /--md-primary/, "bundled stylesheet loaded");
+  assert.match(html, /function render\(\)/, "bundled scripts loaded");
   assert.ok(commands.includes("MSET") && store.has("pj:dataset"), "dataset saved to Redis");
 
   const callback = await fetch(`${site}/oauth/callback?state=x&code=y`, { headers: { cookie } });

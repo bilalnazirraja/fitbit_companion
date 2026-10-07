@@ -2,7 +2,7 @@
 // it as one Node.js function with every path routed to it. Vercel runs this via `vercel-build`.
 // https://vercel.com/docs/build-output-api
 import { build } from "esbuild";
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -23,8 +23,9 @@ export async function buildVercel(outDir = join(root, ".vercel", "output")) {
     sourcemap: true,
     logLevel: "warning",
   });
-  // The dashboard reads its stylesheet and script from next to its own module at startup.
-  for (const asset of ["app.css", "app.js"]) copyFileSync(join(root, "src", "dashboard", asset), join(fn, asset));
+  // The page reads its stylesheet and scripts from next to its own module at startup.
+  copyFileSync(join(root, "src", "dashboard", "app.css"), join(fn, "app.css"));
+  cpSync(join(root, "src", "dashboard", "client"), join(fn, "client"), { recursive: true });
 
   writeFileSync(
     join(fn, ".vc-config.json"),
