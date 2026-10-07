@@ -256,7 +256,7 @@ function effortCard(list) {
       barsChart(
         recent.map((m) => ({
           v: m.hr && m.hr.load != null ? m.hr.load : null,
-          color: m.result === "win" ? "var(--c-win-fill)" : m.result === "loss" ? "var(--c-loss-fill)" : "var(--c-steps)",
+          color: m.result === "win" ? "var(--c-win-fill)" : m.result === "loss" ? "var(--c-loss-fill)" : "var(--c-blue)",
           label: `${dfDate.format(m.startedAt)}, ${matchTitle(m)}: load ${m.hr ? m.hr.load : "unknown"}`,
           tip: () => [
             { head: `${dfDay.format(m.startedAt)} · ${matchTitle(m)}` },

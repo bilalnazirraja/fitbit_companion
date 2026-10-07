@@ -74,7 +74,7 @@ function trendPoints(list, pick, describe) {
     .map((m) => ({
       t: m.startedAt,
       v: pick(m),
-      color: m.result === "win" ? "var(--c-win-fill)" : m.result === "loss" ? "var(--c-loss-fill)" : "var(--c-steps)",
+      color: m.result === "win" ? "var(--c-win-fill)" : m.result === "loss" ? "var(--c-loss-fill)" : "var(--c-blue)",
       label: `${dfDate.format(m.startedAt)}, ${matchTitle(m)}: ${describe(m)}`,
       tip: () => [{ head: `${dfDay.format(m.startedAt)} · ${matchTitle(m)}` }, { value: describe(m), label: resultWord(m) }],
       onClick: () => go("match", m.id),
@@ -230,7 +230,7 @@ function figure(title, sub, chart, legendNode, note) {
 
 const winLegend = () =>
   legend([
-    ["swatch", "var(--c-steps)", "Rallies won"],
+    ["swatch", "var(--c-blue)", "Rallies won"],
     ["line", "var(--md-on-surface)", "Expected if it made no difference"],
   ]);
 
@@ -259,7 +259,7 @@ function rallySection() {
       "Win rate by score and by what's at stake",
       figure("By score situation", "Your lead or deficit before the rally", chartBox(winColumns(ins.byDiff, shortDiff)), winLegend()),
       figure("By pressure", "How much the rally could swing the match", chartBox(winColumns(ins.byPressure)), winLegend()),
-      figure("Key moments", "The situations that decide games", chartBox(barChartH(ins.situations, { aria: "Rally win rate in key moments", color: "var(--c-steps)" })), winLegend()),
+      figure("Key moments", "The situations that decide games", chartBox(barChartH(ins.situations, { aria: "Rally win rate in key moments", color: "var(--c-blue)" })), winLegend()),
       figure("Momentum", "After a run of won (W) or lost (L) rallies", chartBox(winColumns(ins.momentum, shortMomentum)), winLegend()),
     ),
     panel(

@@ -70,7 +70,7 @@ PAGES.match = (r) => {
         { class: "grid" },
         heroCard(m),
         statsCard(m),
-        chartCard(m),
+        rallyCard(m) || chartCard(m),
         m.hr ? zonesCard(m) : null,
         efficiencyCard(m),
         feelCard(m),
@@ -84,7 +84,6 @@ PAGES.match = (r) => {
             })
           : null,
         readinessCard(m),
-        rallyCard(m),
         sourceNote(m),
       ),
     ],
@@ -417,6 +416,7 @@ function readinessCard(m) {
   );
 }
 
+/** With a point-by-point log: one chart of heart rate (zones, rests) above the score, rally by rally. */
 function rallyCard(m) {
   if (!m.rallies) return null;
   const sv = (S.data.sessions || []).find((x) => x.id === m.id);
@@ -426,21 +426,16 @@ function rallyCard(m) {
     ["swatch", "color-mix(in srgb, var(--c-loss-fill) 40%, transparent)", "You behind"],
     ["dot", "var(--md-on-surface)", "High-stakes rally"],
   ];
-  if (sv.align) keys.unshift(["line", "var(--c-hr)", "Heart rate"]);
-  const panelEl = h(
-    "details",
-    { class: "panel wide" },
-    h(
-      "summary",
-      {},
-      icon("scoreboard"),
-      h("div", { class: "li-body" }, h("div", { class: "title-medium", text: "Rally by rally" }), h("div", { class: "body-small muted", text: "Score, pressure and heart rate through the match" })),
-      icon("expand_more", "chev"),
-    ),
-    h("div", { class: "panel-body" }, chartBox(timelineChart(sv, m)), legend(keys)),
+  if (sv.align && m.chart) keys.unshift(["line", "var(--c-hr)", "Heart rate"], ["swatch", "var(--rest)", "Rest, warm-up, cool-down"]);
+  return h(
+    "div",
+    { class: "card wide" },
+    cardHead("Rally by rally", "monitor_heart"),
+    h("p", { class: "body-small muted", style: "margin:-6px 0 8px", text: "Heart rate and the score through the match. Hover or tap for each rally." }),
+    chartBox(timelineChart(sv, m)),
+    legend(keys),
+    m.timing ? h("p", { class: "body-small muted", style: "margin-top:8px", text: BASIS[m.timing.basis] || "" }) : null,
   );
-  panelEl.addEventListener("toggle", () => panelEl.open && mountCharts());
-  return panelEl;
 }
 
 function sourceNote(m) {

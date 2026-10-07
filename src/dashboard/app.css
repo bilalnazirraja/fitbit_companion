@@ -43,7 +43,7 @@
   --c-loss: #c4560a;
   --c-loss-fill: #ffb37a;
   --c-hr: #e5484d;
-  --c-steps: #3a5fd9;
+  --c-blue: #3a5fd9;
   --c-load: #e08600;
   --z1: #9aa6b9;
   --z2: #5b8def;
@@ -109,7 +109,7 @@
     --c-loss: #ffa45c;
     --c-loss-fill: #ffa45c;
     --c-hr: #ff6b6b;
-    --c-steps: #8aa6ff;
+    --c-blue: #8aa6ff;
     --c-load: #ffb547;
     --z1: #8b96a8;
     --z2: #6f9bf5;
@@ -163,7 +163,7 @@
   --c-loss: #ffa45c;
   --c-loss-fill: #ffa45c;
   --c-hr: #ff6b6b;
-  --c-steps: #8aa6ff;
+  --c-blue: #8aa6ff;
   --c-load: #ffb547;
   --z1: #8b96a8;
   --z2: #6f9bf5;
@@ -640,7 +640,7 @@ button, input, select, textarea { font: inherit; color: inherit; letter-spacing:
 .metric { display: inline-flex; align-items: center; gap: 4px; font: 500 13px/18px var(--font); font-variant-numeric: tabular-nums; }
 .metric .ms { font-size: 16px; }
 .metric.hr .ms { color: var(--c-hr); }
-.metric.steps .ms { color: var(--c-steps); }
+.metric.steps .ms { color: var(--c-blue); }
 .metric.load .ms { color: var(--c-load); }
 
 /* ---------- progress ---------- */

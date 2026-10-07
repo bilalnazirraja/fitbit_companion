@@ -214,7 +214,7 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
     const message =
       missingScopes.length > 0
         ? "Connected, but some permissions were left unticked, so some data will be missing. Reconnect and tick all three."
-        : "Google Health connected. Sync to pull your heart rate and steps.";
+        : "Google Health connected. Sync to pull your heart rate.";
     return redirect(flashUrl(message), [clear]);
   }
 
@@ -446,7 +446,6 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
         start: w.start,
         end: w.end,
         avgHr: w.summary.avgHr ?? null,
-        steps: w.summary.steps ?? null,
         calories: w.summary.calories ?? null,
         usedBy: journal.find((e) => e.workoutId === w.id)?.id ?? null,
       })),
@@ -568,7 +567,7 @@ function num(v: string | undefined): number | undefined {
 const MANIFEST = {
   name: "Performance Journal",
   short_name: "Journal",
-  description: "Your matches, heart rate and steps in one place.",
+  description: "Your matches and heart rate in one place.",
   start_url: "/",
   scope: "/",
   display: "standalone",

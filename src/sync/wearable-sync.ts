@@ -78,7 +78,6 @@ export async function syncWearable(
   log(`${groups.length === 0 ? "Heart rate is up to date." : `Downloading heart rate for ${groups.length} new window(s).`}`);
 
   let heartRate = previous?.heartRate ?? [];
-  let steps = previous?.steps ?? [];
   const changedDays = new Set<string>();
   let pending = 0;
   for (const [i, g] of groups.entries()) {
@@ -115,7 +114,6 @@ export async function syncWearable(
       syncedAt: Date.now(),
       recordings: [...byId.values()].sort((a, b) => a.start - b.start),
       heartRate,
-      steps,
       daily,
       fetched: [...done],
     },

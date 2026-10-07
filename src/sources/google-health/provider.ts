@@ -4,7 +4,6 @@ import type {
   DailyContext,
   HrSample,
   Recording,
-  StepInterval,
   TimeRange,
   WearableProvider,
 } from "../../model.ts";
@@ -61,7 +60,6 @@ export function parseExercise(dp: DataPoint): Recording | null {
     summary: {
       avgHr: num(m.averageHeartRateBeatsPerMinute),
       calories: num(m.caloriesKcal),
-      steps: num(m.steps),
       activeMs: ex.activeDuration ? parseDuration(ex.activeDuration) : undefined,
       zonesMs: zones
         ? {
@@ -73,14 +71,6 @@ export function parseExercise(dp: DataPoint): Recording | null {
         : undefined,
     },
   };
-}
-
-export function parseSteps(dp: DataPoint): StepInterval | null {
-  const s = dp.steps as Obj | undefined;
-  const start = Date.parse(s?.interval?.startTime ?? "");
-  const end = Date.parse(s?.interval?.endTime ?? "");
-  const count = num(s?.count);
-  return Number.isFinite(start) && Number.isFinite(end) && count !== undefined ? { start, end, count } : null;
 }
 
 function civilDate(d: Obj | undefined): string | null {
@@ -153,14 +143,6 @@ export function googleHealthProvider(client: GoogleHealthClient, log: (msg: stri
         `heart_rate.sample_time.physical_time < "${isoTime(range.to)}"`;
       const points = await client.listAll("heart-rate", filter, 10_000);
       return mergeSamples(points.map(parseHeartRate).filter(nonNull));
-    },
-
-    async steps(range: TimeRange) {
-      const filter =
-        `steps.interval.start_time >= "${isoTime(range.from)}" AND ` +
-        `steps.interval.start_time < "${isoTime(range.to)}"`;
-      const points = await client.listAll("steps", filter, 10_000);
-      return points.map(parseSteps).filter(nonNull).sort((a, b) => a.start - b.start);
     },
 
     async daily(fromDate: string, toDate: string) {

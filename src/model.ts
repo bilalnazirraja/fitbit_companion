@@ -90,16 +90,9 @@ export interface Recording {
   summary: {
     avgHr?: number;
     calories?: number;
-    steps?: number;
     activeMs?: number;
     zonesMs?: Record<string, number>;
   };
-}
-
-export interface StepInterval {
-  start: number;
-  end: number;
-  count: number;
 }
 
 /** Pre-match state: how recovered/rested you were that day. */
@@ -116,7 +109,6 @@ export interface WearableData {
   syncedAt: number;
   recordings: Recording[];
   heartRate: HrSample[]; // sorted by t, deduplicated
-  steps: StepInterval[];
   daily: DailyContext[];
   /** Workouts/matches whose heart rate is already in, so the next sync can skip them. */
   fetched?: string[];
@@ -132,7 +124,6 @@ export interface WearableProvider {
   readonly id: string;
   recordings(range: TimeRange): Promise<Recording[]>;
   heartRate(range: TimeRange): Promise<HrSample[]>;
-  steps?(range: TimeRange): Promise<StepInterval[]>;
   /** Inclusive local dates, YYYY-MM-DD. */
   daily?(fromDate: string, toDate: string): Promise<DailyContext[]>;
 }

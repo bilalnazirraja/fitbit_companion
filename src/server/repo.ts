@@ -129,7 +129,8 @@ export function repo(kv: Kv) {
         if (day) for (const [t, bpm] of JSON.parse(day) as [number, number][]) heartRate.push({ t, bpm });
       }
       heartRate.sort((a, b) => a.t - b.t);
-      const { hrDays: _days, ...rest } = meta;
+      // Steps from older versions are dropped, so the next save removes them from storage.
+      const { hrDays: _days, steps: _steps, ...rest } = meta as WearableMeta & { steps?: unknown };
       return { ...rest, heartRate };
     },
 

@@ -127,7 +127,7 @@ export interface PlayerInsights {
 }
 
 /** Bumped when the shape changes, so stored analysis from an older version gets rebuilt. */
-export const DATASET_VERSION = 2;
+export const DATASET_VERSION = 3;
 
 export interface Dataset {
   version: number;
@@ -141,7 +141,7 @@ export interface Dataset {
   /** Squash matches, for the rally-by-rally analysis. */
   sessions: SessionView[];
   insights: Record<string, PlayerInsights>;
-  /** Every match `me` played, any sport, newest first, with heart rate, steps and efficiency. */
+  /** Every match `me` played, any sport, newest first, with heart rate and efficiency. */
   matches: MatchView[];
   summaries: Summaries;
   quality: { matches: number; completeLogs: number; live: number; suspect: number; untimed: number; withHr: number };

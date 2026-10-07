@@ -246,37 +246,103 @@ function niceTicks(lo, hi, count) {
   return out;
 }
 
-/** Heart rate (with zones) over the match, steps per minute underneath, games or sets marked. */
+/**
+ * The heart-rate panel both match charts share: zone bands (labelled in the right gutter), grid,
+ * and the line over a fading fill. `points` are [x, bpm] in the chart's own x units; a gap longer
+ * than `maxGap` breaks the line. Returns the bpm nearest to an x, or null in a gap.
+ */
+function hrPanel(root, { points, X, top, height, left, right, W, maxGap }) {
+  const vals = points.map((p) => p[1]);
+  const lo = Math.floor((Math.min(...vals) - 6) / 10) * 10;
+  const hi = Math.ceil((Math.max(...vals) + 6) / 10) * 10;
+  const Y = (v) => top + height - ((v - lo) / (hi - lo)) * height;
+  const width = W - left - right;
+  const hrMax = S.data.hrMax;
+  if (hrMax) {
+    const floors = [0.5, 0.6, 0.7, 0.8, 0.9, 10];
+    for (let k = 0; k < 5; k++) {
+      const a = Math.max(lo, floors[k] * hrMax);
+      const b = Math.min(hi, floors[k + 1] * hrMax);
+      if (b <= a) continue;
+      root.append(s("rect", { x: left, y: Y(b), width, height: Y(a) - Y(b), style: `fill:var(--z${k + 1});opacity:0.09` }));
+      if (Y(a) - Y(b) > 12) root.append(s("text", { x: W - 2, y: (Y(a) + Y(b)) / 2, class: "tick", "text-anchor": "end", "dominant-baseline": "middle", text: `Z${k + 1}` }));
+    }
+  }
+  const step = hi - lo > 80 ? 20 : 10;
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    root.append(s("line", { x1: left, x2: W - right, y1: Y(v), y2: Y(v), class: "grid-line" }));
+    root.append(s("text", { x: left - 6, y: Y(v), class: "tick", "text-anchor": "end", "dominant-baseline": "middle", text: String(v) }));
+  }
+  const id = `hr${++uid}`;
+  root.append(
+    s(
+      "defs",
+      {},
+      s(
+        "linearGradient",
+        { id, x1: 0, x2: 0, y1: 0, y2: 1 },
+        s("stop", { offset: "0%", style: "stop-color:var(--c-hr);stop-opacity:0.28" }),
+        s("stop", { offset: "100%", style: "stop-color:var(--c-hr);stop-opacity:0" }),
+      ),
+    ),
+  );
+  const runs = [];
+  let run = [];
+  let prev = null;
+  for (const p of points) {
+    if (prev !== null && p[0] - prev > maxGap) {
+      runs.push(run);
+      run = [];
+    }
+    run.push(p);
+    prev = p[0];
+  }
+  runs.push(run);
+  const base = top + height;
+  for (const r of runs.filter((x) => x.length > 1)) {
+    const line = r.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)},${Y(v).toFixed(1)}`).join("");
+    root.append(s("path", { d: `${line}L${X(r[r.length - 1][0]).toFixed(1)},${base}L${X(r[0][0]).toFixed(1)},${base}Z`, fill: `url(#${id})` }));
+    root.append(s("path", { d: line, fill: "none", style: "stroke:var(--c-hr);stroke-width:2;stroke-linejoin:round;stroke-linecap:round" }));
+  }
+  return (x) => {
+    let best = null;
+    let bestD = Infinity;
+    for (const p of points) {
+      const d = Math.abs(p[0] - x);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best && bestD <= maxGap ? best[1] : null;
+  };
+}
+
+/** Heart rate (with zones) over the match, with games or sets marked. */
 function effortChart(m) {
   const c = m.chart;
   const sp = sportOf(m.sport);
   return (W) => {
-    const hasHr = c.hr.length > 1;
-    const hasSteps = Boolean(c.steps && c.steps.length);
     const pad = { l: 36, r: 26 };
     const top = c.segments.length ? 22 : 8;
-    const hrH = hasHr ? 172 : 0;
-    const gap = hasHr && hasSteps ? 16 : 0;
-    const stH = hasSteps ? 60 : 0;
-    const axis = 22;
-    const H = top + hrH + gap + stH + axis;
+    const hrH = 180;
+    const H = top + hrH + 22;
     const span = (c.end - c.start) / 1000;
-    const x0 = hasHr ? Math.min(0, c.hr[0][0]) : 0;
-    const x1 = Math.max(span, hasHr ? c.hr[c.hr.length - 1][0] : span);
+    const x0 = Math.min(0, c.hr[0][0]);
+    const x1 = Math.max(span, c.hr[c.hr.length - 1][0]);
     const iw = Math.max(40, W - pad.l - pad.r);
     const X = (sec) => pad.l + ((sec - x0) / (x1 - x0)) * iw;
-    const id = `ec${++uid}`;
-    const root = svgRoot(W, H, `Heart rate${hasSteps ? " and steps" : ""} during the match`);
-    const bottom = top + hrH + gap + stH;
+    const root = svgRoot(W, H, "Heart rate during the match");
+    const bottom = top + hrH;
 
     // Outside the match (warm-up, cool-down) is dimmed; rests between games are shaded.
     for (const [a, b] of [
       [x0, 0],
       [span, x1],
     ]) {
-      if (b > a) root.append(s("rect", { x: X(a), y: top, width: X(b) - X(a), height: bottom - top, style: "fill:var(--rest)" }));
+      if (b > a) root.append(s("rect", { x: X(a), y: top, width: X(b) - X(a), height: hrH, style: "fill:var(--rest)" }));
     }
-    for (const [a, b] of c.rests) root.append(s("rect", { x: X(a), y: top, width: Math.max(1, X(b) - X(a)), height: bottom - top, style: "fill:var(--rest)" }));
+    for (const [a, b] of c.rests) root.append(s("rect", { x: X(a), y: top, width: Math.max(1, X(b) - X(a)), height: hrH, style: "fill:var(--rest)" }));
     c.segments.forEach(([a, b], k) => {
       const sc = m.score[k];
       const wide = X(b) - X(a) > 64;
@@ -284,86 +350,7 @@ function effortChart(m) {
       root.append(s("text", { x: (X(a) + X(b)) / 2, y: top - 8, class: "label", "text-anchor": "middle", text: label }));
       if (k > 0) root.append(s("line", { x1: X(a), x2: X(a), y1: top, y2: bottom, class: "grid-line", "stroke-dasharray": "3 3" }));
     });
-
-    let hrAt = () => null;
-    if (hasHr) {
-      const vals = c.hr.map((p) => p[1]);
-      const lo = Math.floor((Math.min(...vals) - 6) / 10) * 10;
-      const hi = Math.ceil((Math.max(...vals) + 6) / 10) * 10;
-      const Y = (v) => top + hrH - ((v - lo) / (hi - lo)) * hrH;
-      const hrMax = S.data.hrMax;
-      if (hrMax) {
-        const floors = [0.5, 0.6, 0.7, 0.8, 0.9, 10];
-        for (let k = 0; k < 5; k++) {
-          const a = Math.max(lo, floors[k] * hrMax);
-          const b = Math.min(hi, floors[k + 1] * hrMax);
-          if (b <= a) continue;
-          root.append(s("rect", { x: pad.l, y: Y(b), width: iw, height: Y(a) - Y(b), style: `fill:var(--z${k + 1});opacity:0.09` }));
-          if (Y(a) - Y(b) > 12) root.append(s("text", { x: W - 2, y: (Y(a) + Y(b)) / 2, class: "tick", "text-anchor": "end", "dominant-baseline": "middle", text: `Z${k + 1}` }));
-        }
-      }
-      const step = hi - lo > 80 ? 20 : 10;
-      for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
-        root.append(s("line", { x1: pad.l, x2: W - pad.r, y1: Y(v), y2: Y(v), class: "grid-line" }));
-        root.append(s("text", { x: pad.l - 6, y: Y(v), class: "tick", "text-anchor": "end", "dominant-baseline": "middle", text: String(v) }));
-      }
-      const defs = s(
-        "defs",
-        {},
-        s(
-          "linearGradient",
-          { id, x1: 0, x2: 0, y1: 0, y2: 1 },
-          s("stop", { offset: "0%", style: "stop-color:var(--c-hr);stop-opacity:0.28" }),
-          s("stop", { offset: "100%", style: "stop-color:var(--c-hr);stop-opacity:0" }),
-        ),
-      );
-      root.append(defs);
-      const runs = [];
-      let run = [];
-      let prev = null;
-      for (const p of c.hr) {
-        if (prev !== null && p[0] - prev > 60) {
-          runs.push(run);
-          run = [];
-        }
-        run.push(p);
-        prev = p[0];
-      }
-      runs.push(run);
-      for (const r of runs.filter((x) => x.length > 1)) {
-        const line = r.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)},${Y(v).toFixed(1)}`).join("");
-        root.append(s("path", { d: `${line}L${X(r[r.length - 1][0]).toFixed(1)},${top + hrH}L${X(r[0][0]).toFixed(1)},${top + hrH}Z`, fill: `url(#${id})` }));
-        root.append(s("path", { d: line, fill: "none", style: "stroke:var(--c-hr);stroke-width:2;stroke-linejoin:round;stroke-linecap:round" }));
-      }
-      hrAt = (sec) => {
-        let best = null;
-        let bestD = Infinity;
-        for (const p of c.hr) {
-          const d = Math.abs(p[0] - sec);
-          if (d < bestD) {
-            bestD = d;
-            best = p;
-          }
-        }
-        return best && bestD <= 60 ? best[1] : null;
-      };
-    }
-
-    let stepsAt = () => null;
-    if (hasSteps) {
-      const sTop = top + hrH + gap;
-      const maxS = Math.max(1, ...c.steps.map((p) => p[1]));
-      root.append(s("text", { x: pad.l - 6, y: sTop + stH / 2, class: "tick", "text-anchor": "end", "dominant-baseline": "middle", text: "steps" }));
-      root.append(s("line", { x1: pad.l, x2: W - pad.r, y1: sTop + stH, y2: sTop + stH, class: "axis-line" }));
-      const bw = Math.max(1, X(60) - X(0) - 1.5);
-      for (const [minute, count] of c.steps) {
-        if (count <= 0) continue;
-        const ht = Math.max(2, (count / maxS) * (stH - 4));
-        root.append(s("rect", { x: X(minute * 60) + 0.75, y: sTop + stH - ht, width: bw, height: ht, rx: Math.min(3, bw / 2), style: "fill:var(--c-steps);opacity:0.85" }));
-      }
-      const byMinute = new Map(c.steps);
-      stepsAt = (sec) => (sec >= 0 && sec < span ? byMinute.get(Math.floor(sec / 60)) ?? 0 : null);
-    }
+    const hrAt = hrPanel(root, { points: c.hr, X, top, height: hrH, left: pad.l, right: pad.r, W, maxGap: 60 });
 
     const total = span / 60;
     const every = total > 150 ? 30 : total > 60 ? 15 : total > 25 ? 5 : 2;
@@ -377,11 +364,11 @@ function effortChart(m) {
       x: pad.l,
       y: top,
       width: iw,
-      height: bottom - top,
+      height: hrH,
       fill: "transparent",
       class: "hit",
       tabindex: 0,
-      "aria-label": "Match timeline: move along it to read heart rate and steps",
+      "aria-label": "Match timeline: move along it to read the heart rate",
     });
     let focusSec = 0;
     const showAt = (sec, cx, cy) => {
@@ -389,8 +376,6 @@ function effortChart(m) {
       const rows = [{ head: sec < 0 ? "Before the match" : sec > span ? "After the match" : `${clock(sec)} in` }];
       const bpm = hrAt(sec);
       if (bpm != null) rows.push({ value: `${bpm} bpm`, label: S.data.hrMax ? `${Math.round((100 * bpm) / S.data.hrMax)}% of max` : "heart rate", key: "var(--c-hr)" });
-      const st = stepsAt(sec);
-      if (st != null) rows.push({ value: `${st} steps`, label: "that minute", key: "var(--c-steps)" });
       const seg = c.segments.findIndex(([a, b]) => sec >= a && sec <= b);
       if (seg >= 0 && m.score[seg]) rows.push({ value: `${sp.part} ${seg + 1}`, label: `${m.score[seg][0]}–${m.score[seg][1]}` });
       if (c.rests.some(([a, b]) => sec >= a && sec <= b)) rows.push({ value: "Rest", label: "between games" });
@@ -405,8 +390,7 @@ function effortChart(m) {
     };
     hit.addEventListener("pointermove", (e) => {
       const box = root.getBoundingClientRect();
-      const px = e.clientX - box.left;
-      showAt(x0 + ((px - pad.l) / iw) * (x1 - x0), e.clientX, e.clientY);
+      showAt(x0 + ((e.clientX - box.left - pad.l) / iw) * (x1 - x0), e.clientX, e.clientY);
     });
     hit.addEventListener("pointerleave", off);
     hit.addEventListener("blur", off);
@@ -548,7 +532,7 @@ function winTip(b) {
   if (b.pct == null) return [{ head: b.label }, { value: "No rallies yet" }];
   const rows = [
     { head: b.label },
-    { value: pct(b.pct), label: `won ${b.won} of ${b.n}`, key: "var(--c-steps)" },
+    { value: pct(b.pct), label: `won ${b.won} of ${b.n}`, key: "var(--c-blue)" },
     { value: pct(b.exp), label: b.baseline === "opponents" ? "your usual vs these opponents" : "expected by chance in the same games" },
     { value: gapText(b), label: Math.abs(b.z ?? 0) >= 1.96 ? "clear difference" : "within normal variation" },
     { value: `${pct(b.lo)}–${pct(b.hi)}`, label: "likely range" },
@@ -569,7 +553,7 @@ function winColumns(buckets, short) {
     domain: [0, 1],
     ticks: [0, 0.25, 0.5, 0.75, 1],
     fmt: pct,
-    color: "var(--c-steps)",
+    color: "var(--c-blue)",
     short,
     tip: winTip,
     describe: winText,
@@ -677,9 +661,9 @@ function timelineChart(sv, match) {
   const series = match && match.chart ? match.chart.hr.map(([sec, v]) => [match.chart.start + sec * 1000, v]) : [];
   return (W) => {
     const hasHr = Boolean(al) && series.length > 1;
-    const m = { l: 40, r: 10 };
+    const m = { l: 40, r: 26 };
     const top = 24;
-    const hrH = hasHr ? 150 : 0;
+    const hrH = hasHr ? 180 : 0;
     const gap = hasHr ? 18 : 0;
     const scH = 124;
     const axisH = 26;
@@ -716,7 +700,11 @@ function timelineChart(sv, match) {
     const X = (t) => m.l + ((t - t0) / (t1 - t0)) * iw;
     const T = (px) => t0 + ((px - m.l) / iw) * (t1 - t0);
 
-    for (const [a, b] of restT) root.append(s("rect", { x: X(a), y: top, width: Math.max(1, X(b) - X(a)), height: bottom - top, style: "fill:var(--rest)" }));
+    // Warm-up and cool-down are dimmed and rests between games shaded, as on the heart-rate chart.
+    const outside = hasHr ? [[t0, al.window[0]], [al.window[1], t1]] : [];
+    for (const [a, b] of [...outside, ...restT]) {
+      if (b > a) root.append(s("rect", { x: X(a), y: top, width: Math.max(1, X(b) - X(a)), height: bottom - top, style: "fill:var(--rest)" }));
+    }
     gameT.forEach(([a, b], k) => {
       const g = P.games[k];
       if (!g) return;
@@ -725,38 +713,9 @@ function timelineChart(sv, match) {
       if (k > 0 && !hasHr) root.append(s("line", { x1: X(a), x2: X(a), y1: top, y2: bottom, class: "grid-line" }));
     });
 
-    let hrAt = () => null;
-    if (hasHr) {
-      const pts = series.filter(([t]) => t >= t0 && t <= t1);
-      const vals = pts.map((p) => p[1]);
-      const lo = Math.floor((Math.min(...vals) - 5) / 10) * 10;
-      const hi = Math.ceil((Math.max(...vals) + 5) / 10) * 10;
-      const step = hi - lo > 80 ? 20 : 10;
-      const yH = (v) => top + hrH - ((v - lo) / (hi - lo)) * hrH;
-      for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
-        root.append(s("line", { x1: m.l, x2: W - m.r, y1: yH(v), y2: yH(v), class: "grid-line" }));
-        root.append(s("text", { x: m.l - 6, y: yH(v), class: "tick", "text-anchor": "end", "dominant-baseline": "middle", text: String(v) }));
-      }
-      let d = "";
-      let prev = null;
-      for (const [t, v] of pts) {
-        d += `${prev !== null && t - prev <= 30_000 ? "L" : "M"}${X(t).toFixed(1)},${yH(v).toFixed(1)}`;
-        prev = t;
-      }
-      root.append(s("path", { d, fill: "none", style: "stroke:var(--c-hr);stroke-width:2;stroke-linejoin:round;stroke-linecap:round" }));
-      hrAt = (t) => {
-        let best = null;
-        let bestD = Infinity;
-        for (const p of series) {
-          const dd = Math.abs(p[0] - t);
-          if (dd < bestD) {
-            bestD = dd;
-            best = p;
-          }
-        }
-        return best && bestD < 30_000 ? best[1] : null;
-      };
-    }
+    const hrAt = hasHr
+      ? hrPanel(root, { points: series.filter(([t]) => t >= t0 && t <= t1), X, top, height: hrH, left: m.l, right: m.r, W, maxGap: 60_000 })
+      : () => null;
 
     const after = (r) => r.my - r.opp + (r.won === true ? 1 : r.won === false ? -1 : 0);
     const maxAbs = Math.max(3, ...rallies.map((r) => Math.abs(after(r))), ...rallies.map((r) => Math.abs(r.my - r.opp)));

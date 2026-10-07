@@ -57,13 +57,6 @@ function fakeInternet(wearable: WearableData) {
             .map((s) => ({ heartRate: { sampleTime: { physicalTime: iso(s.t) }, beatsPerMinute: String(s.bpm) } })),
         });
       }
-      if (type === "steps") {
-        return Response.json({
-          dataPoints: wearable.steps
-            .filter((s) => s.start >= from && s.start < to)
-            .map((s) => ({ steps: { interval: { startTime: iso(s.start), endTime: iso(s.end) }, count: String(s.count) } })),
-        });
-      }
       return Response.json({ dataPoints: [] });
     }
     throw new Error(`Unexpected request to ${url.href}`);
@@ -281,12 +274,7 @@ test("a logged match gets the heart rate of the watch workout picked for it", as
   const sim = simulateSession(session, mulberry32(4), {}, "a")!;
   // Whole milliseconds, as the API reports them.
   const recording = { ...sim.recording, id: "workout-1", start: Math.floor(sim.recording.start), end: Math.floor(sim.recording.end) };
-  const steps = Array.from({ length: Math.ceil((recording.end - recording.start) / 60_000) }, (_, k) => ({
-    start: recording.start + k * 60_000,
-    end: recording.start + (k + 1) * 60_000,
-    count: 70,
-  }));
-  const wearable: WearableData = { provider: "test", syncedAt: 0, recordings: [recording], heartRate: sim.samples, steps, daily: [] };
+  const wearable: WearableData = { provider: "test", syncedAt: 0, recordings: [recording], heartRate: sim.samples, daily: [] };
   const { open } = setup({}, { wearable });
   await open("/login", form({ password: "correct horse" }));
   await connect(open);

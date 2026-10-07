@@ -26,7 +26,7 @@ export const ICONS = [
   "add", "arrow_back", "arrow_forward", "auto_awesome", "bedtime", "bolt", "calendar_month", "chat_bubble", "check", "close",
   "contrast", "dark_mode", "delete", "edit", "edit_note", "emoji_events", "expand_more", "favorite", "flag", "group",
   "help", "home", "info", "insights", "key", "light_mode", "link", "logout", "monitor_heart", "padel", "person",
-  "refresh", "schedule", "scoreboard", "settings", "speed", "sports_golf", "sports_tennis", "steps", "sync",
+  "refresh", "schedule", "scoreboard", "settings", "speed", "sports_golf", "sports_tennis", "sync",
   "sync_problem", "timer", "trending_down", "trending_flat", "trending_up", "watch",
 ];
 const ICON_FONT_URL =
