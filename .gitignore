@@ -1,0 +1,6 @@
+node_modules/
+.env
+.vercel/
+# Health data, OAuth tokens and generated dashboards (they embed your data)
+data/
+dashboard/*.html

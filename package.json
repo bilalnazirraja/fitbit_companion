@@ -1,0 +1,29 @@
+{
+  "name": "sports-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal sports performance journal: syncs match scoring with wearable heart-rate data.",
+  "type": "module",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "auth": "node src/cli.ts auth",
+    "sync": "node src/cli.ts sync",
+    "sync:scores": "node src/cli.ts sync-scores",
+    "sync:wearable": "node src/cli.ts sync-wearable",
+    "whoami": "node src/cli.ts whoami",
+    "build": "node src/cli.ts build",
+    "demo": "node src/cli.ts demo",
+    "status": "node src/cli.ts status",
+    "serve": "node src/server/dev.ts",
+    "vercel-build": "node scripts/build-vercel.mjs",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

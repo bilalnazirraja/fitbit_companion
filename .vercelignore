@@ -1,0 +1,7 @@
+# Never upload secrets, OAuth tokens or health data; on Vercel these live in
+# Environment Variables and Redis instead.
+.env
+data
+dashboard/*.html
+.vercel
+node_modules
