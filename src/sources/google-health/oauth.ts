@@ -47,7 +47,8 @@ export function buildAuthUrl(clientId: string, redirect: string, state: string, 
     scope: SCOPES.join(" "),
     access_type: "offline", // ask for a refresh token
     prompt: "consent", // always return a refresh token, even on re-auth
-    include_granted_scopes: "true",
+    // No include_granted_scopes: merging in other grants from the project (e.g. a sign-in app's
+    // openid/email) gets the token rejected with DISALLOWED_OAUTH_SCOPES.
     state,
     code_challenge: challenge,
     code_challenge_method: "S256",
